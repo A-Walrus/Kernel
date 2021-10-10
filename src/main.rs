@@ -11,7 +11,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	if let Some(framebuffer) = boot_info.framebuffer.as_mut() {
 		let other_buffer: &[u8] = &[0xff; 1921024];
 
-		framebuffer.buffer_mut().clone_from_slice(other_buffer);
+		framebuffer.buffer_mut().copy_from_slice(other_buffer);
 	}
 
 	loop {}

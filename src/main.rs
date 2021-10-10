@@ -9,9 +9,9 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	// turn the screen gray
 	if let Some(framebuffer) = boot_info.framebuffer.as_mut() {
-		for byte in framebuffer.buffer_mut() {
-			*byte = 0x90;
-		}
+		let other_buffer: &[u8] = &[0xff; 1921024];
+
+		framebuffer.buffer_mut().clone_from_slice(other_buffer);
 	}
 
 	loop {}

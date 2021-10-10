@@ -3,7 +3,16 @@ use std::{
 	process::Command,
 };
 
-const RUN_ARGS: &[&str] = &["--no-reboot", "-s"];
+const RUN_ARGS: &[&str] = &[
+	"--no-reboot",
+	"-s",
+	"-machine",
+	"q35",
+	"-drive",
+	"if=pflash,format=raw,file=/usr/share/ovmf/x64/OVMF_CODE.fd,readonly=on",
+	"-drive",
+	"if=pflash,format=raw,file=/usr/share/ovmf/x64/OVMF_VARS.fd,readonly=on",
+];
 
 fn main() {
 	let mut args = std::env::args().skip(1); // skip executable name
@@ -21,15 +30,15 @@ fn main() {
 		false
 	};
 
-	let bios = create_disk_images(&kernel_binary_path);
+	let uefi = create_disk_images(&kernel_binary_path);
 
 	if no_boot {
-		println!("Created disk image at `{}`", bios.display());
+		println!("Created disk image at `{}`", uefi.display());
 		return;
 	}
 
 	let mut run_cmd = Command::new("qemu-system-x86_64");
-	run_cmd.arg("-drive").arg(format!("format=raw,file={}", bios.display()));
+	run_cmd.arg("-drive").arg(format!("format=raw,file={}", uefi.display()));
 	run_cmd.args(RUN_ARGS);
 
 	let exit_status = run_cmd.status().unwrap();
@@ -61,7 +70,7 @@ pub fn create_disk_images(kernel_binary_path: &Path) -> PathBuf {
 	let disk_image = kernel_binary_path
 		.parent()
 		.unwrap()
-		.join(format!("boot-bios-{}.img", kernel_binary_name));
+		.join(format!("boot-uefi-{}.img", kernel_binary_name));
 	if !disk_image.exists() {
 		panic!(
 			"Disk image does not exist at {} after bootloader build",

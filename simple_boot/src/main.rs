@@ -12,6 +12,10 @@ const RUN_ARGS: &[&str] = &[
 	"if=pflash,format=raw,file=/usr/share/ovmf/x64/OVMF_CODE.fd,readonly=on",
 	"-drive",
 	"if=pflash,format=raw,file=/usr/share/ovmf/x64/OVMF_VARS.fd,readonly=on",
+	"-device",
+	"isa-debug-exit,iobase=0xf4,iosize=0x04",
+	"-serial",
+	"stdio",
 ];
 
 fn main() {

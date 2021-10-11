@@ -5,7 +5,7 @@ use bootloader::{entry_point, BootInfo};
 use core::{mem::transmute, panic::PanicInfo};
 
 mod io;
-use io::buffer::Pixel;
+use io::{buffer::Pixel, serial};
 
 entry_point!(kernel_main);
 
@@ -30,6 +30,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+	serial_println!("{}", info);
 	loop {}
 }

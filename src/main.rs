@@ -10,11 +10,12 @@ use io::serial;
 entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
-	serial_println!("Hello serial");
+	panic!("I am panicking");
 	loop {}
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+	serial_println!("{}", info);
 	loop {}
 }

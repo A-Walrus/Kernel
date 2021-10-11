@@ -11,4 +11,9 @@ members = [
 ]
 
 [dependencies]
-bootloader = "*" # replace this with a version number
+bootloader = "*" # bootloader
+
+# serial for debugging
+uart_16550 = "*" 
+spin = "0.5.2"
+lazy_static = {version = "1.0",features = ["spin_no_std"]}

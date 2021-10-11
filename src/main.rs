@@ -4,16 +4,13 @@
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 
+mod io;
+use io::serial;
+
 entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
-	// turn the screen gray
-	if let Some(framebuffer) = boot_info.framebuffer.as_mut() {
-		for byte in framebuffer.buffer_mut() {
-			*byte = 0x90;
-		}
-	}
-
+	serial_println!("Hello serial");
 	loop {}
 }
 

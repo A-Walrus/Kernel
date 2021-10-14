@@ -7,7 +7,7 @@ use core::panic::PanicInfo;
 mod io;
 use crate::buffer::SCREEN_SIZE;
 use io::{
-	buffer::{self, Pixel, Screen},
+	buffer::{self, Pixel, PixelPos, Screen, TextBuffer},
 	serial,
 };
 
@@ -19,7 +19,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		let pixel = Pixel::new(0, 0, 0x0);
 		let back: &mut [Pixel] = &mut [pixel; buffer::SCREEN_SIZE];
 		let mut screen = Screen::new(as_pixels!(framebuffer.buffer_mut()), back, framebuffer.info());
-		screen.flush();
+		let mut text_buf = TextBuffer { screen };
+		text_buf.draw_char(72, PixelPos::new(0, 0));
+		text_buf.draw_char(69, PixelPos::new(100, 20));
+		text_buf.draw_char(97, PixelPos::new(10, 30));
+		text_buf.screen.flush();
 	}
 
 	loop {}

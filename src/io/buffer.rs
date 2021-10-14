@@ -2,6 +2,7 @@ pub const SCREEN_SIZE: usize = 480256;
 
 use super::font::FONT;
 use bootloader::boot_info::FrameBufferInfo;
+use core::ops;
 
 #[repr(align(4))]
 #[derive(Copy, Clone)]
@@ -17,7 +18,26 @@ impl Pixel {
 	}
 }
 
-type PixelPos = (usize, usize);
+#[derive(Copy, Clone)]
+pub struct PixelPos {
+	x: usize,
+	y: usize,
+}
+impl PixelPos {
+	pub fn new(x: usize, y: usize) -> Self {
+		PixelPos { x, y }
+	}
+}
+
+impl<'a, 'b> ops::Add<&'b PixelPos> for &'a PixelPos {
+	type Output = PixelPos;
+	fn add(self, other: &'b PixelPos) -> PixelPos {
+		PixelPos {
+			x: self.x + other.x,
+			y: self.y + other.y,
+		}
+	}
+}
 
 type Buffer<'a> = &'a mut [Pixel];
 
@@ -33,12 +53,15 @@ impl<'a> Screen<'a> {
 	}
 
 	pub fn put_pixel(&mut self, color: Pixel, pos: PixelPos) {
-		let index = pos.0 + pos.1 * self.info.stride;
-		self.back[index] = color;
+		self.back[self.pos_to_index(&pos)] = color;
 	}
 
 	pub fn flush(&mut self) {
 		self.front.copy_from_slice(self.back);
+	}
+
+	fn pos_to_index(&self, pos: &PixelPos) -> usize {
+		pos.x + pos.y * self.info.stride
 	}
 }
 
@@ -47,4 +70,23 @@ macro_rules! as_pixels {
 	($buf:expr) => {
 		unsafe { &mut *(($buf as *mut [u8]) as *mut [Pixel; SCREEN_SIZE]) }
 	};
+}
+
+pub struct TextBuffer<'a> {
+	pub screen: Screen<'a>,
+}
+
+impl<'a> TextBuffer<'a> {
+	const MASK: [u8; 8] = [128, 64, 32, 16, 8, 4, 2, 1];
+	pub fn draw_char(&mut self, ascii: usize, pos: PixelPos) {
+		let char_bitmap = &FONT[ascii];
+		for row in 0..16 {
+			for col in 0..8 {
+				if char_bitmap[row] & Self::MASK[col] != 0 {
+					self.screen
+						.put_pixel(Pixel::new(255, 255, 255), &pos + &PixelPos::new(col, row))
+				}
+			}
+		}
+	}
 }

@@ -78,15 +78,17 @@ pub struct TextBuffer<'a> {
 
 impl<'a> TextBuffer<'a> {
 	const MASK: [u8; 8] = [128, 64, 32, 16, 8, 4, 2, 1];
-	pub fn draw_char(&mut self, ascii: usize, pos: PixelPos) {
+	pub fn draw_char(&mut self, ascii: usize, mut pos: PixelPos, color: Pixel) {
 		let char_bitmap = &FONT[ascii];
 		for row in 0..16 {
 			for col in 0..8 {
 				if char_bitmap[row] & Self::MASK[col] != 0 {
-					self.screen
-						.put_pixel(Pixel::new(255, 255, 255), &pos + &PixelPos::new(col, row))
+					self.screen.put_pixel(color, pos)
 				}
+				pos.x += 1;
 			}
+			pos.y += 1;
+			pos.x -= 8;
 		}
 	}
 }

@@ -1,16 +1,22 @@
 #![no_std]
 #![no_main]
+#![feature(alloc_error_handler)]
 
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
+extern crate alloc;
 
 mod io;
+mod memory;
+
+use alloc::boxed::Box;
 use io::serial;
+use memory::allocator;
 
 entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
-	panic!("I am panicking");
+	let x = Box::new(5);
 	loop {}
 }
 

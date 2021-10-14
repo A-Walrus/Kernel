@@ -1,5 +1,8 @@
 pub const SCREEN_SIZE: usize = 480256;
 
+use super::font::FONT;
+use bootloader::boot_info::FrameBufferInfo;
+
 #[repr(align(4))]
 #[derive(Copy, Clone)]
 pub struct Pixel {
@@ -14,23 +17,24 @@ impl Pixel {
 	}
 }
 
-type Buffer<'a> = &'a mut [Pixel];
+type PixelPos = (usize, usize);
 
-struct ScreenInfo {}
+type Buffer<'a> = &'a mut [Pixel];
 
 pub struct Screen<'a> {
 	pub front: Buffer<'a>,
 	pub back: Buffer<'a>,
-	info: ScreenInfo,
+	info: FrameBufferInfo,
 }
 
 impl<'a> Screen<'a> {
-	pub fn new(front: Buffer<'a>, back: Buffer<'a>) -> Self {
-		Screen {
-			front,
-			back,
-			info: ScreenInfo {},
-		}
+	pub fn new(front: Buffer<'a>, back: Buffer<'a>, info: FrameBufferInfo) -> Self {
+		Screen { front, back, info }
+	}
+
+	pub fn put_pixel(&mut self, color: Pixel, pos: PixelPos) {
+		let index = pos.0 + pos.1 * self.info.stride;
+		self.back[index] = color;
 	}
 
 	pub fn flush(&mut self) {

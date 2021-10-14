@@ -18,7 +18,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		let buffer = framebuffer.buffer_mut();
 		let pixel = Pixel::new(0, 0, 0x0);
 		let back: &mut [Pixel] = &mut [pixel; buffer::SCREEN_SIZE];
-		let mut screen = Screen::new(as_pixels!(framebuffer.buffer_mut()), back);
+		let mut screen = Screen::new(as_pixels!(framebuffer.buffer_mut()), back, framebuffer.info());
 		screen.flush();
 	}
 

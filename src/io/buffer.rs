@@ -4,6 +4,13 @@ use super::font::FONT;
 use bootloader::boot_info::FrameBufferInfo;
 use core::ops;
 
+#[macro_export]
+macro_rules! as_pixels {
+	($buf:expr) => {
+		unsafe { &mut *(($buf as *mut [u8]) as *mut [Pixel; SCREEN_SIZE]) }
+	};
+}
+
 #[repr(align(4))]
 #[derive(Copy, Clone)]
 pub struct Pixel {
@@ -19,30 +26,33 @@ impl Pixel {
 }
 
 #[derive(Copy, Clone)]
-pub struct PixelPos {
+pub struct Vector {
 	x: usize,
 	y: usize,
 }
-impl PixelPos {
+impl Vector {
 	pub fn new(x: usize, y: usize) -> Self {
-		PixelPos { x, y }
+		Vector { x, y }
 	}
 }
 
-impl<'a, 'b> ops::Add<&'b PixelPos> for &'a PixelPos {
-	type Output = PixelPos;
-	fn add(self, other: &'b PixelPos) -> PixelPos {
-		PixelPos {
+impl<'a, 'b> ops::Add<&'b Vector> for &'a Vector {
+	type Output = Vector;
+	fn add(self, other: &'b Vector) -> Vector {
+		Vector {
 			x: self.x + other.x,
 			y: self.y + other.y,
 		}
 	}
 }
 
+type PixelPos = Vector;
+type CharPos = Vector;
+
 type Buffer<'a> = &'a mut [Pixel];
 
 pub struct Screen<'a> {
-	pub front: Buffer<'a>,
+	front: Buffer<'a>,
 	pub back: Buffer<'a>,
 	info: FrameBufferInfo,
 }
@@ -65,30 +75,24 @@ impl<'a> Screen<'a> {
 	}
 }
 
-#[macro_export]
-macro_rules! as_pixels {
-	($buf:expr) => {
-		unsafe { &mut *(($buf as *mut [u8]) as *mut [Pixel; SCREEN_SIZE]) }
-	};
+pub struct Terminal<'a> {
+	screen: Screen<'a>,
+	cols: usize,
+	rows: usize,
+	cursor_pos: CharPos,
+	//	character array: how is it dynamic size without allocator?
 }
 
-pub struct TextBuffer<'a> {
-	pub screen: Screen<'a>,
-}
-
-impl<'a> TextBuffer<'a> {
-	const MASK: [u8; 8] = [128, 64, 32, 16, 8, 4, 2, 1];
-	pub fn draw_char(&mut self, ascii: usize, mut pos: PixelPos, color: Pixel) {
-		let char_bitmap = &FONT[ascii];
-		for row in 0..16 {
-			for col in 0..8 {
-				if char_bitmap[row] & Self::MASK[col] != 0 {
-					self.screen.put_pixel(color, pos)
-				}
-				pos.x += 1;
-			}
-			pos.y += 1;
-			pos.x -= 8;
+impl<'a> Terminal<'a> {
+	const CHAR_HEIGHT: usize = 16;
+	const CHAR_WIDTH: usize = 8;
+	pub fn new(screen: Screen<'a>) -> Self {
+		Self {
+			screen,
+			cols: screen.info.horizontal_resolution / Self::CHAR_WIDTH,
+			rows: screen.info.vertical_resolution / Self::CHAR_HEIGHT,
+			cursor_pos: Vector::new(0, 0),
 		}
 	}
+	pub fn write(&mut self, data: &str) {}
 }

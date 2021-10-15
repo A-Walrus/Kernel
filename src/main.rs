@@ -20,12 +20,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		let back: &mut [Pixel] = &mut [pixel; buffer::SCREEN_SIZE];
 		let mut screen = Screen::new(as_pixels!(framebuffer.buffer_mut()), back, framebuffer.info());
 		let mut text_buf = TextBuffer { screen };
-		text_buf.draw_char(b'H'.into(), PixelPos::new(0, 0), Pixel::new(255, 0, 0));
-		text_buf.draw_char(b'e'.into(), PixelPos::new(8, 0), Pixel::new(255, 165, 0));
-		text_buf.draw_char(b'l'.into(), PixelPos::new(16, 0), Pixel::new(255, 255, 0));
-		text_buf.draw_char(b'l'.into(), PixelPos::new(24, 0), Pixel::new(0, 128, 0));
-		text_buf.draw_char(b'o'.into(), PixelPos::new(32, 0), Pixel::new(0, 0, 255));
-		text_buf.draw_char(b'!'.into(), PixelPos::new(40, 0), Pixel::new(75, 0, 130));
+
+		const WIDTH: usize = 64;
+		for i in 0..255 {
+			let x = i % WIDTH;
+			let y = i / WIDTH;
+			text_buf.draw_char(i, PixelPos::new(x * 8, y * 16), Pixel::new(255, 255, 255));
+		}
 		text_buf.screen.flush();
 	}
 

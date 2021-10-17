@@ -166,12 +166,27 @@ impl<'a> Terminal<'a> {
 	}
 	pub fn write(&mut self, data: &str) {
 		for character in data.chars() {
-			self.write_char(Char {
-				character,
-				style: Style {},
-			});
+			if character.is_ascii_control() {
+				match character {
+					'\n' => self.new_line(),
+					'\t' => self.horizontal_tab(),
+					_ => {
+						serial_println!("unmatched control: {:?}", character);
+					}
+				}
+			} else {
+				self.write_char(Char {
+					character,
+					style: Style {},
+				});
+			}
 		}
 		self.redraw();
+	}
+
+	fn horizontal_tab(&mut self) {
+		const TAB_SIZE: usize = 8;
+		self.move_cursor(TAB_SIZE - (self.cursor_pos.x % TAB_SIZE));
 	}
 
 	fn get_char(&mut self, pos: CharPos) -> &mut Char {
@@ -201,24 +216,23 @@ impl<'a> Terminal<'a> {
 		}
 	}
 
-	const EMPTY_LINE: [Char; WIDTH] = [Char {
-		character: ' ',
-		style: Style {},
-	}; WIDTH];
-
 	fn line_up(&mut self) {
+		const EMPTY_LINE: [Char; WIDTH] = [Char {
+			character: ' ',
+			style: Style {},
+		}; WIDTH];
 		self.chars.copy_within(1.., 0);
-		self.chars[HEIGHT - 1] = Terminal::EMPTY_LINE;
+		self.chars[HEIGHT - 1] = EMPTY_LINE;
 	}
-	const MASK: [u8; 8] = [128, 64, 32, 16, 8, 4, 2, 1];
 	fn draw_char(&mut self, character: Char, pos: CharPos) {
+		const MASK: [u8; 8] = [128, 64, 32, 16, 8, 4, 2, 1];
 		let pixel_pos = pos.to_pixel();
 		if character.character.is_ascii() {
 			let ascii = character.character as usize;
 			let char_bitmap = &FONT[ascii];
 			for row in 0..16 {
 				for col in 0..8 {
-					let color = if char_bitmap[row] & Self::MASK[col] != 0 {
+					let color = if char_bitmap[row] & MASK[col] != 0 {
 						Pixel::new(255, 255, 255)
 					} else {
 						Pixel::new(0, 0, 0)

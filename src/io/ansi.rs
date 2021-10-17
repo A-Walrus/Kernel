@@ -1,6 +1,6 @@
 // this is mostly stolen from ansi_term crate
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub struct Style {
 	/// The style's foreground colour, if it has one.
 	pub foreground: Option<Colour>,

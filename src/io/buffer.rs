@@ -1,6 +1,9 @@
 pub const SCREEN_SIZE: usize = 480256;
 
-use super::font::FONT;
+use super::{
+	ansi::{Colour, Style},
+	font::FONT,
+};
 use crate::serial_println;
 use bootloader::boot_info::FrameBufferInfo;
 use core::ops;
@@ -100,11 +103,6 @@ impl CharPos {
 
 type Buffer<'a> = &'a mut [Pixel];
 
-#[derive(Copy, Clone, Debug)]
-struct Style {}
-
-impl Style {}
-
 pub struct Screen<'a> {
 	front: Buffer<'a>,
 	pub back: Buffer<'a>,
@@ -142,7 +140,7 @@ impl Char {
 	fn new(character: char) -> Self {
 		Self {
 			character,
-			style: Style {},
+			style: Style::default(),
 		}
 	}
 }
@@ -171,7 +169,7 @@ impl<'a> Terminal<'a> {
 		for character in data.chars() {
 			self.write_char(Char {
 				character,
-				style: Style {},
+				style: Style::default(),
 			});
 		}
 	}

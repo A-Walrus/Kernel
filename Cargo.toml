@@ -17,3 +17,8 @@ bootloader = "*" # bootloader
 uart_16550 = "*" 
 spin = "0.5.2"
 lazy_static = {version = "1.0",features = ["spin_no_std"]}
+
+# config for bootloader
+[package.metadata.bootloader]
+# big enough for back buffer (8MB on HD screen)
+kernel-stack-size = 0xA00000

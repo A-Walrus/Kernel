@@ -182,7 +182,7 @@ impl<'a> Terminal<'a> {
 				});
 			}
 		}
-		self.redraw();
+		self.flush();
 	}
 
 	fn carriage_return(&mut self) {
@@ -199,6 +199,8 @@ impl<'a> Terminal<'a> {
 	}
 
 	fn write_char(&mut self, character: Char) {
+		self.draw_char(character, self.cursor_pos);
+
 		let current = self.get_char(self.cursor_pos);
 		*current = character;
 		self.move_cursor(1);
@@ -228,6 +230,7 @@ impl<'a> Terminal<'a> {
 		}; WIDTH];
 		self.chars.copy_within(1.., 0);
 		self.chars[HEIGHT - 1] = EMPTY_LINE;
+		self.redraw();
 	}
 	fn draw_char(&mut self, character: Char, pos: CharPos) {
 		const MASK: [u8; 8] = [128, 64, 32, 16, 8, 4, 2, 1];
@@ -255,7 +258,9 @@ impl<'a> Terminal<'a> {
 				self.draw_char(*character, Vector::new(x, y))
 			}
 		}
+	}
 
+	fn flush(&mut self) {
 		self.screen.flush()
 	}
 }

@@ -94,7 +94,7 @@ type CharPos = Vector;
 
 impl CharPos {
 	fn to_pixel(&self) -> PixelPos {
-		self / &Vector::new(Terminal::CHAR_WIDTH, Terminal::CHAR_HEIGHT)
+		self * &Vector::new(Terminal::CHAR_WIDTH, Terminal::CHAR_HEIGHT)
 	}
 }
 
@@ -165,15 +165,13 @@ impl<'a> Terminal<'a> {
 		}
 	}
 	pub fn write(&mut self, data: &str) {
-		// serial print for debugging
-		serial_println!("{}", data);
-
 		for character in data.chars() {
 			self.write_char(Char {
 				character,
 				style: Style {},
 			});
 		}
+		self.redraw();
 	}
 
 	fn get_char(&mut self, pos: CharPos) -> &mut Char {
@@ -203,17 +201,41 @@ impl<'a> Terminal<'a> {
 		}
 	}
 
+	const EMPTY_LINE: [Char; WIDTH] = [Char {
+		character: ' ',
+		style: Style {},
+	}; WIDTH];
+
 	fn line_up(&mut self) {
 		self.chars.copy_within(1.., 0);
-		self.redraw();
+		self.chars[HEIGHT - 1] = Terminal::EMPTY_LINE;
 	}
-
+	const MASK: [u8; 8] = [128, 64, 32, 16, 8, 4, 2, 1];
 	fn draw_char(&mut self, character: Char, pos: CharPos) {
 		let pixel_pos = pos.to_pixel();
+		if character.character.is_ascii() {
+			let ascii = character.character as usize;
+			let char_bitmap = &FONT[ascii];
+			for row in 0..16 {
+				for col in 0..8 {
+					let color = if char_bitmap[row] & Self::MASK[col] != 0 {
+						Pixel::new(255, 255, 255)
+					} else {
+						Pixel::new(0, 0, 0)
+					};
+					self.screen.put_pixel(color, &pixel_pos + &PixelPos::new(col, row))
+				}
+			}
+		}
 	}
 
 	pub fn redraw(&mut self) {
-		// TODO draw
+		let mut chars = self.chars;
+		for (y, line) in chars.iter().enumerate() {
+			for (x, character) in line.iter().enumerate() {
+				self.draw_char(*character, Vector::new(x, y))
+			}
+		}
 
 		self.screen.flush()
 	}

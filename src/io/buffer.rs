@@ -170,6 +170,7 @@ impl<'a> Terminal<'a> {
 				match character {
 					'\n' => self.new_line(),
 					'\t' => self.horizontal_tab(),
+					'\r' => self.carriage_return(),
 					_ => {
 						serial_println!("unmatched control: {:?}", character);
 					}
@@ -182,6 +183,10 @@ impl<'a> Terminal<'a> {
 			}
 		}
 		self.redraw();
+	}
+
+	fn carriage_return(&mut self) {
+		self.cursor_pos.x = 0;
 	}
 
 	fn horizontal_tab(&mut self) {

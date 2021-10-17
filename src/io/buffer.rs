@@ -1,6 +1,7 @@
 pub const SCREEN_SIZE: usize = 480256;
 
 use super::font::FONT;
+use crate::serial_println;
 use bootloader::boot_info::FrameBufferInfo;
 use core::ops;
 
@@ -25,7 +26,7 @@ impl Pixel {
 	}
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Vector {
 	x: usize,
 	y: usize,
@@ -36,6 +37,7 @@ impl Vector {
 	}
 }
 
+// vector addition
 impl<'a, 'b> ops::Add<&'b Vector> for &'a Vector {
 	type Output = Vector;
 	fn add(self, other: &'b Vector) -> Vector {
@@ -46,10 +48,62 @@ impl<'a, 'b> ops::Add<&'b Vector> for &'a Vector {
 	}
 }
 
+// vector multiplication
+impl<'a, 'b> ops::Mul<&'b Vector> for &'a Vector {
+	type Output = Vector;
+	fn mul(self, other: &'b Vector) -> Vector {
+		Vector {
+			x: self.x * other.x,
+			y: self.y * other.y,
+		}
+	}
+}
+
+// vector division
+impl<'a, 'b> ops::Div<&'b Vector> for &'a Vector {
+	type Output = Vector;
+	fn div(self, other: &'b Vector) -> Vector {
+		Vector {
+			x: self.x / other.x,
+			y: self.y / other.y,
+		}
+	}
+}
+
+// scalar multiplication
+impl<'a, 'b> ops::Mul<usize> for &'a Vector {
+	type Output = Vector;
+	fn mul(self, scalar: usize) -> Vector {
+		Vector {
+			x: self.x * scalar,
+			y: self.y * scalar,
+		}
+	}
+}
+
+// scalar division
+impl<'a, 'b> ops::Div<usize> for &'a Vector {
+	type Output = Vector;
+	fn div(self, scalar: usize) -> Vector {
+		self * (1 / scalar)
+	}
+}
+
 type PixelPos = Vector;
 type CharPos = Vector;
 
+impl CharPos {
+	fn to_pixel(&self) -> PixelPos {
+		self / &Vector::new(Terminal::CHAR_WIDTH, Terminal::CHAR_HEIGHT)
+	}
+}
+
 type Buffer<'a> = &'a mut [Pixel];
+
+#[derive(Copy, Clone, Debug)]
+struct Style {}
+
+impl Style {}
 
 pub struct Screen<'a> {
 	front: Buffer<'a>,
@@ -75,24 +129,92 @@ impl<'a> Screen<'a> {
 	}
 }
 
+const WIDTH: usize = 80;
+const HEIGHT: usize = 25;
+
+#[derive(Copy, Clone, Debug)]
+struct Char {
+	character: char,
+	style: Style,
+}
+
+impl Char {
+	fn new(character: char) -> Self {
+		Self {
+			character,
+			style: Style {},
+		}
+	}
+}
+
 pub struct Terminal<'a> {
 	screen: Screen<'a>,
-	cols: usize,
-	rows: usize,
 	cursor_pos: CharPos,
-	//	character array: how is it dynamic size without allocator?
+	chars: [[Char; WIDTH]; HEIGHT],
 }
 
 impl<'a> Terminal<'a> {
 	const CHAR_HEIGHT: usize = 16;
 	const CHAR_WIDTH: usize = 8;
+
 	pub fn new(screen: Screen<'a>) -> Self {
 		Self {
 			screen,
-			cols: screen.info.horizontal_resolution / Self::CHAR_WIDTH,
-			rows: screen.info.vertical_resolution / Self::CHAR_HEIGHT,
 			cursor_pos: Vector::new(0, 0),
+			chars: [[Char::new(' '); WIDTH]; HEIGHT],
 		}
 	}
-	pub fn write(&mut self, data: &str) {}
+	pub fn write(&mut self, data: &str) {
+		// serial print for debugging
+		serial_println!("{}", data);
+
+		for character in data.chars() {
+			self.write_char(Char {
+				character,
+				style: Style {},
+			});
+		}
+	}
+
+	fn get_char(&mut self, pos: CharPos) -> &mut Char {
+		&mut self.chars[pos.y][pos.x]
+	}
+
+	fn write_char(&mut self, character: Char) {
+		let current = self.get_char(self.cursor_pos);
+		*current = character;
+		self.move_cursor(1);
+	}
+
+	fn move_cursor(&mut self, dist: usize) {
+		self.cursor_pos.x = (self.cursor_pos.x + dist) % WIDTH;
+		let new_lines = (self.cursor_pos.x + dist) / WIDTH;
+		for _ in 0..new_lines {
+			self.new_line();
+		}
+	}
+
+	fn new_line(&mut self) {
+		self.cursor_pos.x = 0;
+		if self.cursor_pos.y < HEIGHT - 1 {
+			self.cursor_pos.y += 1;
+		} else {
+			self.line_up()
+		}
+	}
+
+	fn line_up(&mut self) {
+		self.chars.copy_within(1.., 0);
+		self.redraw();
+	}
+
+	fn draw_char(&mut self, character: Char, pos: CharPos) {
+		let pixel_pos = pos.to_pixel();
+	}
+
+	pub fn redraw(&mut self) {
+		// TODO draw
+
+		self.screen.flush()
+	}
 }

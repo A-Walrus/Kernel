@@ -20,7 +20,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		let back: &mut [Pixel] = &mut [pixel; buffer::SCREEN_SIZE];
 		let mut screen = Screen::new(as_pixels!(framebuffer.buffer_mut()), back, framebuffer.info());
 		let mut terminal = Terminal::new(screen);
-		terminal.write("Hello world!\nNew Line\nthis\tis\ntab\tyay");
+		loop {
+			terminal.write("Hello world!");
+		}
 	}
 
 	loop {}

@@ -1,6 +1,6 @@
 pub const SCREEN_SIZE: usize = 480256;
 
-use super::font::FONT;
+use super::{font::FONT, mask_table::MASK_TABLE};
 use crate::serial_println;
 use bootloader::boot_info::FrameBufferInfo;
 use core::ops;
@@ -13,7 +13,7 @@ macro_rules! as_pixels {
 }
 
 #[repr(align(4))]
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct Pixel {
 	pub blue: u8,
 	pub green: u8,
@@ -165,6 +165,7 @@ impl<'a> Terminal<'a> {
 		}
 	}
 	pub fn write(&mut self, data: &str) {
+		serial_println!("started printing");
 		for character in data.chars() {
 			if character.is_ascii_control() {
 				match character {
@@ -182,7 +183,9 @@ impl<'a> Terminal<'a> {
 				});
 			}
 		}
+		serial_println!("finished printing");
 		self.flush();
+		serial_println!("flushed");
 	}
 
 	fn carriage_return(&mut self) {
@@ -233,20 +236,27 @@ impl<'a> Terminal<'a> {
 		self.redraw();
 	}
 	fn draw_char(&mut self, character: Char, pos: CharPos) {
-		const MASK: [u8; 8] = [128, 64, 32, 16, 8, 4, 2, 1];
-		let pixel_pos = pos.to_pixel();
+		let mut pixel_pos = pos.to_pixel();
 		if character.character.is_ascii() {
 			let ascii = character.character as usize;
 			let char_bitmap = &FONT[ascii];
-			for row in 0..16 {
-				for col in 0..8 {
-					let color = if char_bitmap[row] & MASK[col] != 0 {
-						Pixel::new(255, 255, 255)
-					} else {
-						Pixel::new(0, 0, 0)
-					};
-					self.screen.put_pixel(color, &pixel_pos + &PixelPos::new(col, row))
+			let foreground: Pixel = Pixel::new(255, 255, 255);
+			let background: Pixel = Pixel::new(0, 0, 0);
+			let foreground_row = [foreground; 8];
+			let background_row = [background; 8];
+			for y in 0..16 {
+				let index = self.screen.pos_to_index(&pixel_pos);
+				let row = &mut self.screen.back[index..index + 8];
+				row.copy_from_slice(&foreground_row);
+				unsafe {
+					let mask = &MASK_TABLE[char_bitmap[y] as usize];
+					let row_as_u64 = &mut *(row as *mut [Pixel] as *mut [u64; 4]);
+
+					for i in 0..4 {
+						row_as_u64[i] = row_as_u64[i] & mask[i];
+					}
 				}
+				pixel_pos.y += 1;
 			}
 		}
 	}

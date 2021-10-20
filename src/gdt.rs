@@ -48,7 +48,7 @@ struct Selectors {
 pub fn setup() {
 	unsafe {
 		GDT.0.load();
-		set_cs(GDT.1.kernel_code_selector);
+		CS::set_reg(GDT.1.kernel_code_selector);
 		load_tss(GDT.1.tss_selector);
 	}
 }

@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "bootloader",
  "lazy_static",
+ "pic8259",
  "spin",
  "uart_16550",
  "x86_64",
@@ -62,6 +63,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db985b63431fe09e8d71f50aeceffcc31e720cb86be8dad2f38d084c5a328466"
 dependencies = [
  "json",
+]
+
+[[package]]
+name = "pic8259"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24ec21f514e2e16e94649f1d041ca4a7069b512c037ac156360652a775e6229d"
+dependencies = [
+ "x86_64",
 ]
 
 [[package]]

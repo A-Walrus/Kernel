@@ -1,10 +1,12 @@
 #![no_std]
 #![no_main]
+#![feature(abi_x86_interrupt)]
 
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 
 mod gdt;
+mod interrupts;
 mod io;
 use crate::buffer::SCREEN_SIZE;
 use io::{
@@ -16,6 +18,9 @@ entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	gdt::setup();
+	interrupts::setup();
+	// invoke breakpoint exception
+	x86_64::instructions::interrupts::int3();
 	loop {}
 }
 

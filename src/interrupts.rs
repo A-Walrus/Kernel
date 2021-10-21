@@ -18,7 +18,7 @@ enum IRQ {
 
 impl IRQ {
 	fn as_u8(&self) -> u8 {
-		(*self as u8 + PIC_1_OFFSET)
+		*self as u8 + PIC_1_OFFSET
 	}
 
 	fn index(&self) -> usize {

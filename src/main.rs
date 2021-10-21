@@ -8,11 +8,7 @@ use core::panic::PanicInfo;
 mod gdt;
 mod interrupts;
 mod io;
-use crate::buffer::SCREEN_SIZE;
-use io::{
-	buffer::{self, Pixel, Screen, Terminal},
-	serial,
-};
+use io::serial;
 
 entry_point!(kernel_main);
 

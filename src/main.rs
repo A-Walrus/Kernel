@@ -19,8 +19,6 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	gdt::setup();
 	interrupts::setup();
-	// invoke breakpoint exception
-	x86_64::instructions::interrupts::int3();
 	loop {}
 }
 

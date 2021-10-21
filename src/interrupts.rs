@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
-use crate::serial_println;
+use crate::{serial_print, serial_println};
 use pic8259::ChainedPics;
 use spin;
 pub const PIC_1_OFFSET: u8 = 32;
@@ -31,19 +31,29 @@ lazy_static! {
 		let mut idt = InterruptDescriptorTable::new();
 		idt.breakpoint.set_handler_fn(breakpoint_handler);
 		idt[IRQ::Keyboard.index()].set_handler_fn(keyboard_interrupt_handler);
+		idt[IRQ::Timer.index()].set_handler_fn(timer_interrupt_handler);
 		idt
 	};
 }
 
 pub fn setup() {
 	IDT.load();
-	unsafe { PICS.lock().initialize() };
+	unsafe {
+		let mut pics = PICS.lock();
+		pics.initialize();
+		const MASK: u8 = 0b1111_1100;
+		pics.write_masks(MASK, MASK);
+	};
 	x86_64::instructions::interrupts::enable();
-	serial_println!("Interrupts enabled (hopefully)");
+}
+
+extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+	unsafe {
+		PICS.lock().notify_end_of_interrupt(IRQ::Timer.as_u8());
+	}
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-	serial_println!("Key Pressed");
 	unsafe {
 		PICS.lock().notify_end_of_interrupt(IRQ::Keyboard.as_u8());
 	}

@@ -262,7 +262,7 @@ impl<'a> Terminal<'a> {
 	}
 
 	pub fn redraw(&mut self) {
-		let mut chars = self.chars;
+		let chars = self.chars;
 		for (y, line) in chars.iter().enumerate() {
 			for (x, character) in line.iter().enumerate() {
 				self.draw_char(*character, Vector::new(x, y))

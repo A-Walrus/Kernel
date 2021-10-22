@@ -1,7 +1,10 @@
 [package]
-name = "Kernel"
+name = "kernel"
 version = "0.1.0"
 edition = "2021"
+authors = ["Guy Ofek <ofek.r.guy@gmail.com>"]
+description = "A basic operating system kernel written in rust"
+readme="README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -12,13 +15,12 @@ members = [
 
 [dependencies]
 bootloader = "*" # bootloader
+x86_64="*" # dealing with x86 (GDT,IDT,paging...)
+pic8259 = "*" # dealing with legacy x86 pic
+lazy_static = {version = "1.0",features = ["spin_no_std"]} # safe interface to mutable statics
+spin = "0.5.2" # for lazy_static
+uart_16550 = "*" # serial for debugging
 
-# serial for debugging
-uart_16550 = "*" 
-spin = "0.5.2"
-lazy_static = {version = "1.0",features = ["spin_no_std"]}
-x86_64="*"
-pic8259 = "*"
 
 # config for bootloader
 [package.metadata.bootloader]

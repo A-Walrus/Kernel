@@ -4,7 +4,8 @@ const DATA_PORT: u16 = 0x60; // Read/Write
 const STATUS_PORT: u16 = 0x64; // Read
 const COMMAND_PORT: u16 = 0x64; // Write
 
-pub fn read_key() {
+// called on keyboard interrupt
+pub fn read_input() {
 	let mut data_port: PortGeneric<u8, ReadWriteAccess> = Port::new(DATA_PORT);
 	let data;
 	unsafe {

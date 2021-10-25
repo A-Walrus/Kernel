@@ -1,4 +1,4 @@
-use crate::{serial_print, serial_println};
+use crate::{serial_print, serial_println, TERMINAL};
 use lazy_static::lazy_static;
 use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
 use spin::Mutex;
@@ -28,7 +28,18 @@ fn parse_scan_code(scancode: u8) {
 	if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
 		if let Some(key) = keyboard.process_keyevent(key_event) {
 			match key {
-				DecodedKey::Unicode(character) => serial_print!("{}", character),
+				DecodedKey::Unicode(character) => unsafe {
+					match &mut TERMINAL {
+						Some(terminal) => {
+							let mut tmp = [0u8; 4];
+							let char_string = character.encode_utf8(&mut tmp);
+							terminal.write(&char_string);
+						}
+						None => {
+							serial_println!("No terminal!");
+						}
+					}
+				},
 				DecodedKey::RawKey(key) => serial_println!("{:?}", key),
 			}
 		}

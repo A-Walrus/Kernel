@@ -21,7 +21,7 @@ pub struct Pixel {
 }
 
 impl Pixel {
-	pub fn new(red: u8, green: u8, blue: u8) -> Self {
+	pub const fn new(red: u8, green: u8, blue: u8) -> Self {
 		Pixel { blue, green, red }
 	}
 }
@@ -165,13 +165,13 @@ impl<'a> Terminal<'a> {
 		}
 	}
 	pub fn write(&mut self, data: &str) {
-		serial_println!("started printing");
 		for character in data.chars() {
 			if character.is_ascii_control() {
 				match character {
 					'\n' => self.new_line(),
 					'\t' => self.horizontal_tab(),
 					'\r' => self.carriage_return(),
+					'\u{8}' => self.backspace(),
 					_ => {
 						serial_println!("unmatched control: {:?}", character);
 					}
@@ -183,9 +183,18 @@ impl<'a> Terminal<'a> {
 				});
 			}
 		}
-		serial_println!("finished printing");
 		self.flush();
-		serial_println!("flushed");
+	}
+
+	fn backspace(&mut self) {
+		if self.cursor_pos.x > 0 {
+			self.cursor_pos.x -= 1;
+			self.write_char(Char {
+				character: ' ',
+				style: Style {},
+			});
+			self.cursor_pos.x -= 1;
+		}
 	}
 
 	fn carriage_return(&mut self) {

@@ -25,4 +25,7 @@ pc-keyboard = "0.5.0"
 # config for bootloader
 [package.metadata.bootloader]
 # big enough for back buffer (8MB on HD screen)
-kernel-stack-size = 0xA00000
+kernel-stack-size = 0x1000000
+kernel-stack-address = 0xFFFFFE000000
+framebuffer-address = 0xFFFFFD000000
+boot-info-address = 0xFFFFFC000000

@@ -1,3 +1,4 @@
+/// Size of the screen in bytes.
 pub const SCREEN_SIZE: usize = 480256;
 
 use super::{font::FONT, mask_table::MASK_TABLE};
@@ -5,6 +6,7 @@ use crate::serial_println;
 use bootloader::boot_info::FrameBufferInfo;
 use core::ops;
 
+/// Cast reference array of bytes to a reference to array of [Pixel]s thats 1/4 as long.
 #[macro_export]
 macro_rules! as_pixels {
 	($buf:expr) => {
@@ -12,6 +14,8 @@ macro_rules! as_pixels {
 	};
 }
 
+/// Pixel as represented in a framebuffer. Colors in a pixel are ordered BGR, with pixels being
+/// aligned to 4 bytes.
 #[repr(align(4))]
 #[derive(Debug, Copy, Clone)]
 pub struct Pixel {
@@ -21,23 +25,27 @@ pub struct Pixel {
 }
 
 impl Pixel {
+	/// Create a new pixel of a given color.
 	pub fn new(red: u8, green: u8, blue: u8) -> Self {
 		Pixel { blue, green, red }
 	}
 }
 
+/// 2D vector/point, used to represent pixel, or character locations.
 #[derive(Copy, Clone, Debug)]
 pub struct Vector {
 	x: usize,
 	y: usize,
 }
+
 impl Vector {
+	/// Create a new vector from x and y coords.
 	pub fn new(x: usize, y: usize) -> Self {
 		Vector { x, y }
 	}
 }
 
-// vector addition
+/// Scalar addition.
 impl<'a, 'b> ops::Add<&'b Vector> for &'a Vector {
 	type Output = Vector;
 	fn add(self, other: &'b Vector) -> Vector {
@@ -48,7 +56,6 @@ impl<'a, 'b> ops::Add<&'b Vector> for &'a Vector {
 	}
 }
 
-// vector multiplication
 impl<'a, 'b> ops::Mul<&'b Vector> for &'a Vector {
 	type Output = Vector;
 	fn mul(self, other: &'b Vector) -> Vector {
@@ -59,7 +66,6 @@ impl<'a, 'b> ops::Mul<&'b Vector> for &'a Vector {
 	}
 }
 
-// vector division
 impl<'a, 'b> ops::Div<&'b Vector> for &'a Vector {
 	type Output = Vector;
 	fn div(self, other: &'b Vector) -> Vector {
@@ -70,7 +76,7 @@ impl<'a, 'b> ops::Div<&'b Vector> for &'a Vector {
 	}
 }
 
-// scalar multiplication
+/// Scalar multiplication.
 impl<'a, 'b> ops::Mul<usize> for &'a Vector {
 	type Output = Vector;
 	fn mul(self, scalar: usize) -> Vector {
@@ -81,7 +87,7 @@ impl<'a, 'b> ops::Mul<usize> for &'a Vector {
 	}
 }
 
-// scalar division
+/// Scalar division.
 impl<'a, 'b> ops::Div<usize> for &'a Vector {
 	type Output = Vector;
 	fn div(self, scalar: usize) -> Vector {
@@ -89,22 +95,33 @@ impl<'a, 'b> ops::Div<usize> for &'a Vector {
 	}
 }
 
-type PixelPos = Vector;
-type CharPos = Vector;
+/// Type alias for a [Vector] when used to represent position of a pixel.
+pub type PixelPos = Vector;
+/// Type alias for a [Vector] when used to represent position of a character.
+pub type CharPos = Vector;
 
 impl CharPos {
+	/// Convert to [PixelPos] of the top left corner of the character. This is dependant on
+	/// [Terminal::CHAR_WIDTH], [Terminal::CHAR_HEIGHT], and the offset, if there is any.
 	fn to_pixel(&self) -> PixelPos {
 		self * &Vector::new(Terminal::CHAR_WIDTH, Terminal::CHAR_HEIGHT)
 	}
 }
 
+/// Type alias for a reference to a framebuffer: an array of [Pixel]s.
 type Buffer<'a> = &'a mut [Pixel];
 
+/// Styling of a character: color, bold, italic, strikthrough...
+/// This is currently not used.
 #[derive(Copy, Clone, Debug)]
 struct Style {}
 
 impl Style {}
 
+/// A screen has two buffers, front, and back, to be used for double buffering.
+/// The front buffer is the one that is mapped to the screen (or a region of the screen), and the
+/// back buffer is the one that is written into. The back buffer can be "flushed" onto the front
+/// buffer with the [Terminal::flush] method.
 pub struct Screen<'a> {
 	front: Buffer<'a>,
 	pub back: Buffer<'a>,
@@ -112,26 +129,35 @@ pub struct Screen<'a> {
 }
 
 impl<'a> Screen<'a> {
+	/// Create a enw screen.
 	pub fn new(front: Buffer<'a>, back: Buffer<'a>, info: FrameBufferInfo) -> Self {
 		Screen { front, back, info }
 	}
 
+	/// Draw a pixel onto the [Screen::back] buffer
 	pub fn put_pixel(&mut self, color: Pixel, pos: PixelPos) {
 		self.back[self.pos_to_index(&pos)] = color;
 	}
 
+	/// Flush back buffer onto front buffer. This is done using a memcpy.
 	pub fn flush(&mut self) {
 		self.front.copy_from_slice(self.back);
 	}
 
+	/// Convert 2D [PixelPos] into 1D index into [Buffer]. This is calculated using
+	/// [FrameBufferInfo::stride] and not the x resolution, since there could be padding outside of
+	/// the screen.
 	fn pos_to_index(&self, pos: &PixelPos) -> usize {
 		pos.x + pos.y * self.info.stride
 	}
 }
 
+/// Width of terminal in characters.
 const WIDTH: usize = 80;
+/// Height of terminal in characters.
 const HEIGHT: usize = 25;
 
+/// A utf-8 character and it's style. The terminal is built as a grid of these.
 #[derive(Copy, Clone, Debug)]
 struct Char {
 	character: char,
@@ -139,6 +165,7 @@ struct Char {
 }
 
 impl Char {
+	/// Create a new [Char] from a [char], using a default empty style.
 	fn new(character: char) -> Self {
 		Self {
 			character,
@@ -147,6 +174,7 @@ impl Char {
 	}
 }
 
+/// A terminal with a screen, a cursor, and a grid of [Char]s.
 pub struct Terminal<'a> {
 	screen: Screen<'a>,
 	cursor_pos: CharPos,
@@ -154,9 +182,13 @@ pub struct Terminal<'a> {
 }
 
 impl<'a> Terminal<'a> {
+	/// The height of a single character in pixels.
 	const CHAR_HEIGHT: usize = 16;
+	/// The width of a single character in pixels.
 	const CHAR_WIDTH: usize = 8;
 
+	/// Create a new [Terminal] from a [Screen]. This takes ownership of the string, as the
+	/// terminal is now the one responsible for it.
 	pub fn new(screen: Screen<'a>) -> Self {
 		Self {
 			screen,
@@ -164,6 +196,8 @@ impl<'a> Terminal<'a> {
 			chars: [[Char::new(' '); WIDTH]; HEIGHT],
 		}
 	}
+
+	/// write a string to the terimnal.
 	pub fn write(&mut self, data: &str) {
 		serial_println!("started printing");
 		for character in data.chars() {
@@ -188,19 +222,23 @@ impl<'a> Terminal<'a> {
 		serial_println!("flushed");
 	}
 
+	/// Move cursor to beginning of line.
 	fn carriage_return(&mut self) {
 		self.cursor_pos.x = 0;
 	}
 
+	const TAB_SIZE: usize = 8;
+	/// Tab horizontally: move cursor forword to nearest multiple of [Terminal::TAB_SIZE].
 	fn horizontal_tab(&mut self) {
-		const TAB_SIZE: usize = 8;
-		self.move_cursor(TAB_SIZE - (self.cursor_pos.x % TAB_SIZE));
+		self.move_cursor(Terminal::TAB_SIZE - (self.cursor_pos.x % Terminal::TAB_SIZE));
 	}
 
+	/// Get a mutable reference to the character at a certain position.
 	fn get_char(&mut self, pos: CharPos) -> &mut Char {
 		&mut self.chars[pos.y][pos.x]
 	}
 
+	/// Write a single [Char] onto the screen, at [Terminal::cursor_pos].
 	fn write_char(&mut self, character: Char) {
 		self.draw_char(character, self.cursor_pos);
 
@@ -209,6 +247,7 @@ impl<'a> Terminal<'a> {
 		self.move_cursor(1);
 	}
 
+	/// Move the cursor a certain amount forward. Wraps to next line if you reach the end.
 	fn move_cursor(&mut self, dist: usize) {
 		self.cursor_pos.x = (self.cursor_pos.x + dist) % WIDTH;
 		let new_lines = (self.cursor_pos.x + dist) / WIDTH;
@@ -217,6 +256,9 @@ impl<'a> Terminal<'a> {
 		}
 	}
 
+	/// Add a new line.
+	/// * At bottom of screen: Move entire screen up with [Terminal::line_up].
+	/// * Otherwise: Move cusor to start of next line.
 	fn new_line(&mut self) {
 		self.cursor_pos.x = 0;
 		if self.cursor_pos.y < HEIGHT - 1 {
@@ -226,6 +268,8 @@ impl<'a> Terminal<'a> {
 		}
 	}
 
+	/// Move entire screen up a line. This involves a memcpy of the characters array, and redrawing
+	/// the entire screen.
 	fn line_up(&mut self) {
 		const EMPTY_LINE: [Char; WIDTH] = [Char {
 			character: ' ',
@@ -235,6 +279,9 @@ impl<'a> Terminal<'a> {
 		self.chars[HEIGHT - 1] = EMPTY_LINE;
 		self.redraw();
 	}
+
+	/// Draw a character at a certain position. This writes pixels to the back buffer. In order to
+	/// see changes on screen you must [Terminal::flush].
 	fn draw_char(&mut self, character: Char, pos: CharPos) {
 		let mut pixel_pos = pos.to_pixel();
 		if character.character.is_ascii() {
@@ -261,6 +308,7 @@ impl<'a> Terminal<'a> {
 		}
 	}
 
+	/// Redraw entire screen. Loop over every character and draw it.
 	pub fn redraw(&mut self) {
 		let chars = self.chars;
 		for (y, line) in chars.iter().enumerate() {
@@ -270,6 +318,7 @@ impl<'a> Terminal<'a> {
 		}
 	}
 
+	/// Flush the [Screen] of this terminal. Uses [Screen::flush].
 	fn flush(&mut self) {
 		self.screen.flush()
 	}

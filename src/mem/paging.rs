@@ -2,9 +2,8 @@ use crate::serial_println;
 use x86_64::{
 	addr::{PhysAddr, VirtAddr},
 	registers::control::Cr3,
-	structures::paging::{mapper::MappedPageTable, PageTable},
+	structures::paging::{mapper::MappedPageTable, page_table::PageTableFlags, PageTable},
 };
-
 /// Virtual address that the entire physical memory is mapped starting from.
 const PHYSICAL_MAPPING_OFFSET: u64 = 0xFFFFC00000000000;
 
@@ -20,10 +19,14 @@ fn phys_to_virt(phys: PhysAddr) -> VirtAddr {
 /// reading the page table).
 /// * The reference isn't used after [Cr3] has been modified (The reference would be pointing to
 /// garbage).
-pub unsafe fn get_page_table() -> &'static PageTable {
+pub unsafe fn get_current_page_table() -> &'static PageTable {
 	let (phys_frame, _flags) = Cr3::read(); // CR3 register stores location of page table (and some flags)
 	let phys_addr = phys_frame.start_address();
-	let virt_addr = phys_to_virt(phys_addr);
+	unsafe { get_page_table_by_addr(phys_addr) }
+}
+
+unsafe fn get_page_table_by_addr(addr: PhysAddr) -> &'static PageTable {
+	let virt_addr = phys_to_virt(addr);
 	let table_ptr = virt_addr.as_ptr();
 	let page_table: &'static PageTable;
 	unsafe {
@@ -38,5 +41,28 @@ pub fn print_table(page_table: &PageTable) {
 		if !entry.is_unused() {
 			serial_println!("L4 Entry {}: {:?}", i, entry);
 		}
+	}
+}
+
+/// Error returned by [get_sub_table]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SubPageError {
+	/// The entry is unused.
+	EntryUnused,
+	/// The entry is not a page table, its a huge page.
+	NotAPageTable,
+}
+
+/// Gets the sub table at a certain index in a page table, where `0 ≤ index < 512`. If the entry is
+/// unused, or is a huge page and not a page table, an error will be returned.
+pub fn get_sub_table<'a>(page_table: &'a PageTable, index: usize) -> Result<&'a PageTable, SubPageError> {
+	let entry = &page_table[index];
+	if entry.is_unused() {
+		Err(SubPageError::EntryUnused)
+	} else if entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+		Err(SubPageError::NotAPageTable)
+	} else {
+		let phys_addr = entry.addr();
+		Ok(unsafe { get_page_table_by_addr(phys_addr) })
 	}
 }

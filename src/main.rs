@@ -17,7 +17,8 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	gdt::setup();
 	interrupts::setup();
-	paging::print_table(unsafe { paging::get_page_table() });
+	let top_level = unsafe { paging::get_current_page_table() };
+	paging::print_table(top_level);
 	loop {}
 }
 

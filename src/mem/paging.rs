@@ -44,6 +44,23 @@ pub fn print_table(page_table: &PageTable) {
 	}
 }
 
+/// Recursively print page table.
+pub fn print_table_recursive(page_table: &PageTable, depth: usize) {
+	const PADDINGS: [&str; 4] = ["", "\t", "\t\t", "\t\t\t"];
+	for (i, entry) in page_table.iter().enumerate() {
+		if !entry.is_unused() {
+			let padding = PADDINGS[4 - depth];
+			serial_println!("{}L{} Entry {}: {:?}", padding, depth, i, entry);
+			if depth > 1 {
+				let sub_table = get_sub_table(page_table, i);
+				if let Ok(table) = sub_table {
+					print_table_recursive(table, depth - 1);
+				}
+			}
+		}
+	}
+}
+
 /// Error returned by [get_sub_table]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SubPageError {

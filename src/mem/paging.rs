@@ -13,18 +13,18 @@ fn phys_to_virt(phys: PhysAddr) -> VirtAddr {
 }
 
 /// Returns a reference (with static lifetime) to the current top level page table.
-/// ## Safety
-/// The caller must insure:
-/// * The full physical memory is mapped at [PHYSICAL_MAPPING_OFFSET] (otherwise you wouldn't be
-/// reading the page table).
-/// * The reference isn't used after [Cr3] has been modified (The reference would be pointing to
-/// garbage).
-pub unsafe fn get_current_page_table() -> &'static PageTable {
+pub fn get_current_page_table() -> &'static PageTable {
 	let (phys_frame, _flags) = Cr3::read(); // CR3 register stores location of page table (and some flags)
 	let phys_addr = phys_frame.start_address();
+
+	// This is sound because we know that CR3 points to a page table
 	unsafe { get_page_table_by_addr(phys_addr) }
 }
 
+/// Get a reference to the page table at a certain physical address.
+/// ## Safety
+/// This function is unsafe because it will read the data at whatever physical address you give it.
+/// Make sure that this is the physical address of a page table.
 unsafe fn get_page_table_by_addr(addr: PhysAddr) -> &'static PageTable {
 	let virt_addr = phys_to_virt(addr);
 	let table_ptr = virt_addr.as_ptr();

@@ -18,7 +18,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	gdt::setup();
 	interrupts::setup();
 	let top_level = unsafe { paging::get_current_page_table() };
-	paging::print_table_recursive(top_level, 4);
+
+	use x86_64::VirtAddr;
+
+	let translated_addr = paging::translate_addr(VirtAddr::new(0xFFFFC00000000005), top_level);
+	serial_println!("{:?}", translated_addr);
 	loop {}
 }
 

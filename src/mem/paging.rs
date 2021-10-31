@@ -61,6 +61,41 @@ pub fn print_table_recursive(page_table: &PageTable, depth: usize) {
 	}
 }
 
+/// Error returned by [translate_addr]
+#[derive(Debug)]
+pub struct TranslateError;
+
+/// Translate virtual address to physical address, using a given page table
+pub fn translate_addr(addr: VirtAddr, mut page_table: &PageTable) -> Result<PhysAddr, TranslateError> {
+	let indexes = [
+		usize::from(addr.p4_index()),
+		usize::from(addr.p3_index()),
+		usize::from(addr.p2_index()),
+		usize::from(addr.p1_index()),
+	];
+	// Need to get the sub table 3 times because there are (upto) 4 tables, and I already have the
+	// first one.
+	for i in 0..3 {
+		let result = get_sub_table(page_table, indexes[i]);
+		match result {
+			Ok(table) => page_table = table,
+			Err(error) => match error {
+				SubPageError::EntryUnused => return Err(TranslateError),
+				SubPageError::NotAPageTable => {
+					// Huge page, 2MB at p2 or 1GB at p3
+					let base = page_table[indexes[i]].addr();
+					const OFFSET_MASKS: [u64; 2] = [0x3FFFFFFF, 0x1FFFFF]; // 1GB, 2MB
+					let offset = addr.as_u64() & OFFSET_MASKS[i - 1];
+					return Ok(base + offset);
+				}
+			},
+		}
+	}
+	// If I got here it's mapped to a 4KB page at p1.
+	let phys_addr = page_table[indexes[3]].addr() + usize::from(addr.page_offset());
+	Ok(phys_addr)
+}
+
 /// Error returned by [get_sub_table]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SubPageError {

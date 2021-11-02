@@ -4,23 +4,30 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 use crate::{serial_print, serial_println};
 use pic8259::ChainedPics;
 use spin;
+
+/// Offset of the first pic in the chained pics
 pub const PIC_1_OFFSET: u8 = 32;
+/// Offset of the second pic in the chained pics
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 
+/// Mutex wrapping chained pics. This is the interface for communicating with the pics.
 pub static PICS: spin::Mutex<ChainedPics> = spin::Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
 
 #[derive(Copy, Clone)]
 #[repr(u8)]
+/// Interrupt request type/id.
 enum IRQ {
 	Timer = 0,
 	Keyboard = 1,
 }
 
 impl IRQ {
+	/// Convert to [u8] index into IDT
 	fn as_u8(&self) -> u8 {
 		*self as u8 + PIC_1_OFFSET
 	}
 
+	/// Convert to [usize] index into IDT
 	fn index(&self) -> usize {
 		self.as_u8() as usize
 	}
@@ -36,6 +43,7 @@ lazy_static! {
 	};
 }
 
+/// Set up interrupt descriptor table, and chained pics
 pub fn setup() {
 	IDT.load();
 	unsafe {
@@ -47,12 +55,14 @@ pub fn setup() {
 	x86_64::instructions::interrupts::enable();
 }
 
+/// Interrupt handler for timer interrupts.
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
 	unsafe {
 		PICS.lock().notify_end_of_interrupt(IRQ::Timer.as_u8());
 	}
 }
 
+/// Interupt handler for keyboard interrupts.
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
 	use crate::io::keyboard;
 	keyboard::read_input();
@@ -61,6 +71,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
 	}
 }
 
+/// Interrupt handler for breakpoint interrupts.
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 	serial_println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
 }

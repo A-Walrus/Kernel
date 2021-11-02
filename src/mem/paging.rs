@@ -21,7 +21,7 @@ pub fn get_current_page_table() -> &'static PageTable {
 	unsafe { get_page_table_by_addr(phys_addr) }
 }
 
-/// Get a reference to the page table at a certain physical address.
+/// Get a reference to the page table at a certain physical address.  
 /// ## Safety
 /// This function is unsafe because it will read the data at whatever physical address you give it.
 /// Make sure that this is the physical address of a page table.
@@ -105,8 +105,9 @@ pub enum SubPageError {
 	NotAPageTable,
 }
 
-/// Gets the sub table at a certain index in a page table, where `0 ≤ index < 512`. If the entry is
-/// unused, or is a huge page and not a page table, an error will be returned.
+/// Gets the sub table at a certain index in a page table, where `0 ≤ index <
+/// 512`. If the entry is unused, or is a huge page and not a page table, an
+/// error will be returned.
 pub fn get_sub_table<'a>(page_table: &'a PageTable, index: usize) -> Result<&'a PageTable, SubPageError> {
 	let entry = &page_table[index];
 	if entry.is_unused() {

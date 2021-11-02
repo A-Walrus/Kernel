@@ -2,8 +2,13 @@ use crate::serial_println;
 use x86_64::{
 	addr::{PhysAddr, VirtAddr},
 	registers::control::Cr3,
-	structures::paging::{mapper::MappedPageTable, page_table::PageTableFlags, PageTable},
+	structures::paging::{
+		mapper::{MappedPageTable, OffsetPageTable},
+		page_table::PageTableFlags,
+		PageTable,
+	},
 };
+
 /// Virtual address that the entire physical memory is mapped starting from.
 const PHYSICAL_MAPPING_OFFSET: u64 = 0xFFFFC00000000000;
 
@@ -19,6 +24,18 @@ pub fn get_current_page_table() -> &'static PageTable {
 
 	// This is sound because we know that CR3 points to a page table
 	unsafe { get_page_table_by_addr(phys_addr) }
+}
+
+/// Get an [OffsetPageTable] from a page table. This is a wrapper which makes it easy to work with
+/// page tables that have mapped the entire physical memory to some offset (in this case
+/// [PHYSICAL_MAPPING_OFFSET]).
+/// ## Safety
+/// The caller must insure:
+/// * The page table is a level 4 table
+/// * The entire physical memory is mapped in this page table at [PHYSICAL_MAPPING_OFFSET].
+unsafe fn get_offset_page_table(page_table: &mut PageTable) -> OffsetPageTable {
+	let offset = VirtAddr::new(PHYSICAL_MAPPING_OFFSET);
+	unsafe { OffsetPageTable::new(page_table, offset) }
 }
 
 /// Get a reference to the page table at a certain physical address.

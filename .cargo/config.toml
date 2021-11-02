@@ -15,3 +15,4 @@ build-std-features = ["compiler-builtins-mem"]
 
 [build]
 target = "x86_64-custom.json"
+rustdocflags = ["--document-private-items"]

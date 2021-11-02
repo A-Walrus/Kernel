@@ -19,8 +19,11 @@ macro_rules! as_pixels {
 #[repr(align(4))]
 #[derive(Debug, Copy, Clone)]
 pub struct Pixel {
+	/// The amount of blue in this color.
 	pub blue: u8,
+	/// The amount of green in this color.
 	pub green: u8,
+	/// The amount of red in this color.
 	pub red: u8,
 }
 
@@ -123,8 +126,11 @@ impl Style {}
 /// back buffer is the one that is written into. The back buffer can be "flushed" onto the front
 /// buffer with the [Terminal::flush] method.
 pub struct Screen<'a> {
+	/// The front buffer, visible buffer.
 	front: Buffer<'a>,
+	/// The back buffer, that is directly written to.
 	pub back: Buffer<'a>,
+	/// Some information about the screen: (resolution...).
 	info: FrameBufferInfo,
 }
 
@@ -176,8 +182,11 @@ impl Char {
 
 /// A terminal with a screen, a cursor, and a grid of [Char]s.
 pub struct Terminal<'a> {
+	/// The screen that this terminal controls.
 	screen: Screen<'a>,
+	/// The current position of the cursor.
 	cursor_pos: CharPos,
+	/// Grid of characters with their styles, representing what's currently on screen.
 	chars: [[Char; WIDTH]; HEIGHT],
 }
 

@@ -1,4 +1,8 @@
-// This bitmap font is taken from the linux kernel font_sun8x16.c
+/// This is an array representing a bitmap font. Every index into the font is an ascii value, in it
+/// the pixels of the character are saved where 1 bit = 1 pixel.
+/// This font is from the linux kernel font [sun8x16].
+///
+/// [sun8x16]: https://crates.io/crates/bootloader
 pub const FONT: [[u8; 16]; 256] = [
 	[
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

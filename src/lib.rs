@@ -8,6 +8,7 @@
 #![feature(abi_x86_interrupt)]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![feature(alloc_error_handler)]
 
 /// Dealing with cpu related structures and registers: IDT, GDT, TLB...
 pub mod cpu;
@@ -18,7 +19,6 @@ pub mod io;
 /// Dealing with memory: paging, tlb, alloc/heap...
 pub mod mem;
 
-use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 
 use io::serial;

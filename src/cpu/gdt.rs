@@ -35,6 +35,8 @@ lazy_static! {
 		)
 	};
 }
+
+/// All the data created statically to describe the GDT, and its segments.
 struct Selectors {
 	kernel_code_selector: SegmentSelector,
 	kernel_data_selector: SegmentSelector,
@@ -43,6 +45,8 @@ struct Selectors {
 	tss_selector: SegmentSelector,
 }
 
+/// Set up global descriptor table, and set code segment register, and task
+/// state segment register.
 pub fn setup() {
 	unsafe {
 		GDT.0.load();

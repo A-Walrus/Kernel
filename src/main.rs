@@ -2,7 +2,10 @@
 #![no_main]
 
 use bootloader::{entry_point, BootInfo};
-use kernel::cpu::{gdt, interrupts};
+use kernel::{
+	cpu::{gdt, interrupts},
+	mem::paging,
+};
 
 entry_point!(kernel_main);
 
@@ -10,5 +13,7 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	gdt::setup();
 	interrupts::setup();
+	let top_level = unsafe { paging::get_current_page_table() };
+	//paging::print_table_recursive(top_level, 4);
 	loop {}
 }

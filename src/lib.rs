@@ -9,11 +9,14 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
-/// Module for dealing with cpu related structures and registers: IDT, GDT, TLB...
+/// Dealing with cpu related structures and registers: IDT, GDT, TLB...
 pub mod cpu;
 
-/// Module for dealing with input/output: screen, keyboard, serial...
+/// Dealing with input/output: screen, keyboard, serial...
 pub mod io;
+
+/// Dealing with memory: paging, tlb, alloc/heap...
+pub mod mem;
 
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;

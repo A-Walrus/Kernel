@@ -1,11 +1,10 @@
 use crate::serial_println;
+use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
 use x86_64::{
 	addr::{PhysAddr, VirtAddr},
 	registers::control::Cr3,
 	structures::paging::{
-		mapper::{MappedPageTable, OffsetPageTable},
-		page_table::PageTableFlags,
-		PageTable,
+		mapper::OffsetPageTable, page_table::PageTableFlags, FrameAllocator, PageTable, PhysFrame, Size4KiB,
 	},
 };
 
@@ -98,5 +97,48 @@ pub fn get_sub_table<'a>(page_table: &'a PageTable, index: usize) -> Result<&'a 
 	} else {
 		let phys_addr = entry.addr();
 		Ok(unsafe { get_page_table_by_addr(phys_addr) })
+	}
+}
+
+/// Provides frames for mapper to map. Should be used for the kernel, during boot process. These
+/// are gotten from the bootloader's [MemoryRegions] map.
+pub struct BootFrameAllocator {
+	memory_regions: &'static MemoryRegions,
+	next: usize,
+}
+
+impl BootFrameAllocator {
+	/// Create a new boot frame allocator.
+	/// ## Safety
+	/// The caller must guarantee:
+	/// * The memory map is valid (otherwise the allocator might allocate frames that are in use /
+	/// don't exist).
+	/// * This is only called once (only one boot frame allocator is constructed) otherwise the
+	/// allocators would be allocating the same regions multiple times.
+	pub unsafe fn new(memory_regions: &'static MemoryRegions) -> Self {
+		BootFrameAllocator {
+			memory_regions,
+			next: 0,
+		}
+	}
+
+	fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
+		// get usable regions from memory map
+		let regions = self.memory_regions.iter();
+		let usable_regions = regions.filter(|r| r.kind == MemoryRegionKind::Usable);
+		// map each region to its address range
+		let addr_ranges = usable_regions.map(|r| r.start..r.end);
+		// transform to an iterator of frame start addresses
+		let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
+		// create `PhysFrame` types from the start addresses
+		frame_addresses.map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
+	}
+}
+
+unsafe impl FrameAllocator<Size4KiB> for BootFrameAllocator {
+	fn allocate_frame(&mut self) -> Option<PhysFrame> {
+		let frame = self.usable_frames().nth(self.next);
+		self.next += 1;
+		frame
 	}
 }

@@ -2,11 +2,12 @@
 #![no_main]
 
 extern crate alloc;
-use alloc::boxed::Box;
+use alloc::{boxed::Box, vec, vec::Vec};
 use bootloader::{entry_point, BootInfo};
 use kernel::{
 	cpu::{gdt, interrupts},
 	mem::{heap, paging},
+	serial_println,
 };
 
 entry_point!(kernel_main);
@@ -15,14 +16,15 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	gdt::setup();
 	interrupts::setup();
-	let top_level = paging::get_current_page_table();
-	paging::print_table_recursive(top_level, 4);
 
 	paging::map_heap(&boot_info.memory_regions);
+	heap::setup();
 
-	let top_level = paging::get_current_page_table();
-	paging::print_table_recursive(top_level, 4);
-
-	//let x = Box::new(5);
+	let x = Box::new(5);
+	let mut vec = Vec::new();
+	for i in 0..512 {
+		vec.push(i)
+	}
+	serial_println!("{:?}", vec.as_slice());
 	loop {}
 }

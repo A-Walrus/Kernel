@@ -21,7 +21,7 @@ pub mod mem;
 
 use core::panic::PanicInfo;
 
-use io::serial;
+pub use io::serial;
 
 /// Panic handler is called automatically when a panic occurs, and prints the information to serial
 /// for debugging.

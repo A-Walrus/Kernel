@@ -21,6 +21,7 @@ lazy_static = {version = "1.0",features = ["spin_no_std"]} # safe interface to m
 spin = "0.5.2" # for lazy_static
 uart_16550 = "*" # ports for serial, keyboard... 
 pc-keyboard = "0.5.0"
+linked_list_allocator = "*"
 
 # config for bootloader
 [package.metadata.bootloader]

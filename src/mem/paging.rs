@@ -4,7 +4,10 @@ use x86_64::{
 	addr::{PhysAddr, VirtAddr},
 	registers::control::Cr3,
 	structures::paging::{
-		mapper::OffsetPageTable, page_table::PageTableFlags, FrameAllocator, PageTable, PhysFrame, Size4KiB,
+		mapper::{Mapper, OffsetPageTable},
+		page::Page,
+		page_table::PageTableFlags,
+		FrameAllocator, PageTable, PhysFrame, Size4KiB,
 	},
 };
 
@@ -17,7 +20,7 @@ fn phys_to_virt(phys: PhysAddr) -> VirtAddr {
 }
 
 /// Returns a reference (with static lifetime) to the current top level page table.
-pub fn get_current_page_table() -> &'static PageTable {
+pub fn get_current_page_table() -> &'static mut PageTable {
 	let (phys_frame, _flags) = Cr3::read(); // CR3 register stores location of page table (and some flags)
 	let phys_addr = phys_frame.start_address();
 
@@ -41,12 +44,12 @@ unsafe fn get_offset_page_table(page_table: &mut PageTable) -> OffsetPageTable {
 /// ## Safety
 /// This function is unsafe because it will read the data at whatever physical address you give it.
 /// Make sure that this is the physical address of a page table.
-unsafe fn get_page_table_by_addr(addr: PhysAddr) -> &'static PageTable {
+unsafe fn get_page_table_by_addr(addr: PhysAddr) -> &'static mut PageTable {
 	let virt_addr = phys_to_virt(addr);
-	let table_ptr = virt_addr.as_ptr();
-	let page_table: &'static PageTable;
+	let table_ptr = virt_addr.as_mut_ptr();
+	let page_table: &'static mut PageTable;
 	unsafe {
-		page_table = &*table_ptr;
+		page_table = &mut *table_ptr;
 	}
 	page_table
 }
@@ -140,5 +143,28 @@ unsafe impl FrameAllocator<Size4KiB> for BootFrameAllocator {
 		let frame = self.usable_frames().nth(self.next);
 		self.next += 1;
 		frame
+	}
+}
+
+/// Create a mapping in the page table for the kernel heap.
+pub fn map_heap(memory_regions: &'static MemoryRegions) {
+	let mut mapper;
+	let mut frame_allocator;
+	unsafe {
+		mapper = get_offset_page_table(get_current_page_table());
+		frame_allocator = BootFrameAllocator::new(memory_regions);
+	}
+
+	let frame = frame_allocator.allocate_frame().unwrap();
+	let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+	let page: Page<Size4KiB> = Page::from_start_address(VirtAddr::new(0xFFFF980000000000))
+		.ok()
+		.unwrap();
+	unsafe {
+		mapper
+			.map_to(page, frame, flags, &mut frame_allocator)
+			.expect("mapping failed")
+			.flush();
 	}
 }

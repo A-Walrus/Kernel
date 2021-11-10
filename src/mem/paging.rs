@@ -147,7 +147,7 @@ unsafe impl FrameAllocator<Size4KiB> for BootFrameAllocator {
 }
 
 /// Create a mapping in the page table for the kernel heap.
-pub fn map_heap(memory_regions: &'static MemoryRegions) {
+pub fn map_heap(memory_regions: &'static MemoryRegions, start: usize, size: usize) {
 	let mut mapper;
 	let mut frame_allocator;
 	unsafe {
@@ -158,13 +158,20 @@ pub fn map_heap(memory_regions: &'static MemoryRegions) {
 	let frame = frame_allocator.allocate_frame().unwrap();
 	let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
-	let page: Page<Size4KiB> = Page::from_start_address(VirtAddr::new(0xFFFF980000000000))
-		.ok()
-		.unwrap();
-	unsafe {
-		mapper
-			.map_to(page, frame, flags, &mut frame_allocator)
-			.expect("mapping failed")
-			.flush();
+	let page_range = {
+		let heap_start = VirtAddr::new(start as u64);
+		let heap_end = heap_start + size - 1u64;
+		let heap_start_page = Page::containing_address(heap_start);
+		let heap_end_page = Page::containing_address(heap_end);
+		Page::range_inclusive(heap_start_page, heap_end_page)
+	};
+
+	for page in page_range {
+		unsafe {
+			mapper
+				.map_to(page, frame, flags, &mut frame_allocator)
+				.expect("mapping failed")
+				.flush();
+		}
 	}
 }

@@ -155,7 +155,6 @@ pub fn map_heap(memory_regions: &'static MemoryRegions, start: usize, size: usiz
 		frame_allocator = BootFrameAllocator::new(memory_regions);
 	}
 
-	let frame = frame_allocator.allocate_frame().unwrap();
 	let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
 	let page_range = {
@@ -167,6 +166,7 @@ pub fn map_heap(memory_regions: &'static MemoryRegions, start: usize, size: usiz
 	};
 
 	for page in page_range {
+		let frame = frame_allocator.allocate_frame().unwrap();
 		unsafe {
 			mapper
 				.map_to(page, frame, flags, &mut frame_allocator)

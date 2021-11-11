@@ -19,11 +19,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
 	heap::setup(&boot_info.memory_regions);
 
-	let mut v = Vec::new();
-	for i in 0..100000 {
-		let a = Box::new(8);
-		v.push(i);
-	}
+	//paging::print_table_recursive(paging::get_current_page_table(), 4);
+
+	let a = Box::new(5);
+	serial_println!("Box one");
+	let b = Box::new(5);
 	serial_println!("Done");
 	loop {}
 }

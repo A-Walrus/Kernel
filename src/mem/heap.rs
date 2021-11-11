@@ -3,23 +3,42 @@ extern crate alloc;
 #[global_allocator]
 static ALLOCATOR: Locked<BuddyAllocator> = Locked::new(BuddyAllocator::new());
 
-use crate::{mem::paging, serial_println};
+use crate::{mem::paging, serial_print, serial_println};
 use alloc::alloc::{GlobalAlloc, Layout};
 use bootloader::boot_info::MemoryRegions;
 use core::ptr::null_mut;
 
-const LOG_HEAP_SIZE: usize = 24; // 16MB
+const LOG_HEAP_SIZE: usize = 23; // 8MB
 const HEAP_SIZE: usize = 1 << LOG_HEAP_SIZE;
 const HEAP_START: usize = 0xFFFF980000000000;
 
 const LOG_SMALLEST_SIZE: usize = 3;
 const SMALLEST_SIZE: usize = 1 << LOG_SMALLEST_SIZE;
-const SIZES: usize = LOG_HEAP_SIZE - LOG_SMALLEST_SIZE + 1;
+const SIZES: usize = LOG_HEAP_SIZE - LOG_SMALLEST_SIZE;
 
 /// Set up heap mapping, and heap allocator.
 pub fn setup(memory_regions: &'static MemoryRegions) {
 	paging::map_heap(memory_regions, HEAP_START, HEAP_SIZE);
 	ALLOCATOR.lock().init();
+}
+
+struct LinkedListIter<'a> {
+	node: &'a Node,
+}
+
+impl<'a> Iterator for LinkedListIter<'a> {
+	type Item = usize;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		let value = *self.node;
+		match value {
+			Some(addr) => unsafe {
+				self.node = &*(addr as *mut Node);
+			},
+			None => {}
+		}
+		value
+	}
 }
 
 /// Struct representing the global allocator. It implements [GlobalAlloc] and is
@@ -43,6 +62,19 @@ impl BuddyAllocator {
 			let root = &mut *(HEAP_START as *mut Node);
 			*root = None;
 		}
+		self.print();
+	}
+
+	fn print(&self) {
+		for i in 0..SIZES {
+			serial_print!("{:#2} [", i);
+			let iter = self.get_ll_iter(i);
+			for i in iter {
+				serial_print!("{:#x}, ", i);
+			}
+			serial_println!("]")
+		}
+		serial_println!("");
 	}
 
 	// returns index into the [BuddyAllocator::linked_lists], which corrosponds to the proper size
@@ -58,10 +90,11 @@ impl BuddyAllocator {
 	}
 
 	fn buddy(ptr: usize, size_index: usize) -> usize {
-		ptr ^ (1 << SIZES - size_index)
+		ptr ^ (1 << (LOG_HEAP_SIZE - size_index))
 	}
 
 	fn get_region(&mut self, size_index: usize) -> *mut u8 {
+		serial_println!("{}", size_index);
 		if self.linked_lists[size_index].is_some() {
 			let node = self.linked_lists[size_index].take();
 
@@ -87,12 +120,10 @@ impl BuddyAllocator {
 
 	fn add_region(&mut self, new_addr: usize, size_index: usize) {
 		let mut current_node: &mut Node = &mut self.linked_lists[size_index];
+		let mut next_node = None;
 		while let Some(addr) = current_node {
 			if new_addr < *addr {
-				unsafe {
-					let next: &mut Node = &mut *(new_addr as *mut Node);
-					*next = Some(*addr);
-				}
+				next_node = Some(*addr);
 				break;
 			} else {
 				unsafe {
@@ -101,6 +132,17 @@ impl BuddyAllocator {
 			}
 		}
 		*current_node = Some(new_addr);
+		unsafe {
+			let next: &mut Node = &mut *(new_addr as *mut Node);
+			serial_println!("Writing {:?} to {:#x}", next_node, new_addr);
+			*next = next_node;
+		}
+	}
+
+	fn get_ll_iter(&self, index: usize) -> LinkedListIter {
+		LinkedListIter {
+			node: &self.linked_lists[index],
+		}
 	}
 }
 
@@ -108,8 +150,10 @@ unsafe impl GlobalAlloc for Locked<BuddyAllocator> {
 	unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
 		let size_index = BuddyAllocator::find_size_index(layout.size());
 		let mut allocator = self.lock();
-		//serial_println!("{:?}", allocator.linked_lists);
-		allocator.get_region(size_index)
+		allocator.print();
+		let res = allocator.get_region(size_index);
+		allocator.print();
+		res
 	}
 
 	unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {

@@ -12,7 +12,7 @@ const LOG_HEAP_SIZE: usize = 23; // 8MB
 const HEAP_SIZE: usize = 1 << LOG_HEAP_SIZE;
 const HEAP_START: usize = 0xFFFF980000000000;
 
-const LOG_SMALLEST_SIZE: usize = 3;
+const LOG_SMALLEST_SIZE: usize = 5;
 const SMALLEST_SIZE: usize = 1 << LOG_SMALLEST_SIZE;
 const LAYERS: usize = LOG_HEAP_SIZE - LOG_SMALLEST_SIZE;
 const SIZES: [usize; LAYERS] = {
@@ -42,7 +42,7 @@ const SIZES: [usize; LAYERS] = {
 pub fn setup(memory_regions: &'static MemoryRegions) {
 	// Make sure that the smallest size is big enough to hold a node.
 	assert!(
-		size_of::<Node>() > SMALLEST_SIZE,
+		size_of::<Node>() <= SMALLEST_SIZE,
 		"Smallest size is too small enough to fit a Node"
 	);
 
@@ -52,7 +52,7 @@ pub fn setup(memory_regions: &'static MemoryRegions) {
 
 type Link = Option<usize>;
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 struct Node {
 	next: Link,
 	prev: Link,
@@ -82,7 +82,7 @@ impl BuddyAllocator {
 	}
 
 	fn init(&mut self) {
-		self.add_free_block(0)
+		self.add_free_block(0, false)
 	}
 
 	// returns index into the [BuddyAllocator::linked_lists], which corrosponds to the proper size
@@ -146,7 +146,7 @@ impl BuddyAllocator {
 
 	/// Get a block of a given layer, returns block id
 	fn get_block(&mut self, layer: usize) -> usize {
-		serial_println!("GET AT {}", layer);
+		serial_println!("GET AT LAYER {}", layer);
 		// Check if there is a block at the wanted layer:
 		match self.linked_lists[layer].next {
 			Some(next) => {
@@ -157,11 +157,19 @@ impl BuddyAllocator {
 				id
 			}
 			None => {
+				if layer == 0 {
+					panic!("No more heap");
+				}
 				// Get a block the next size up
 				let parent_id = self.get_block(layer - 1);
 				let children_ids = BuddyAllocator::get_children_ids(parent_id);
 
-				self.add_free_block(children_ids[1]);
+				self.add_free_block(children_ids[0], false);
+				self.add_free_block(children_ids[1], false);
+
+				unsafe {
+					self.remove_block(children_ids[0]);
+				}
 				children_ids[0]
 			}
 		}
@@ -194,17 +202,17 @@ impl BuddyAllocator {
 		}
 	}
 
-	fn add_free_block(&mut self, id: usize) {
+	fn add_free_block(&mut self, id: usize, with_merge: bool) {
 		serial_println!("ADD FREE {}", id);
 		// Check if it's buddy is free
-		if id != 0 && self.xor_free[BuddyAllocator::pair_id(id)] {
+		if with_merge && id != 0 && self.xor_free[BuddyAllocator::pair_id(id)] {
 			// Buddy is free, can merge
 			unsafe {
 				self.remove_block(BuddyAllocator::get_buddy_id(id));
 			}
 
 			let parent_id = BuddyAllocator::get_parent_id(id);
-			self.add_free_block(parent_id);
+			self.add_free_block(parent_id, true);
 		} else {
 			// Buddy isn't free
 			if id != 0 {
@@ -220,6 +228,12 @@ impl BuddyAllocator {
 			this_node.next = self.linked_lists[layer].next;
 			this_node.prev = Some(&mut self.linked_lists[layer] as *mut _ as usize);
 			self.linked_lists[layer].next = Some(this_node as *mut _ as usize);
+			match this_node.next {
+				Some(next) => unsafe {
+					(*(next as *mut Node)).prev = Some(this_node as *mut _ as usize);
+				},
+				None => {}
+			}
 		}
 	}
 }
@@ -234,7 +248,7 @@ unsafe impl GlobalAlloc for Locked<BuddyAllocator> {
 	unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
 		let mut allocator = self.lock();
 		let layer = BuddyAllocator::layer_from_size(layout.size());
-		allocator.add_free_block(BuddyAllocator::get_id(layer, ptr as usize))
+		allocator.add_free_block(BuddyAllocator::get_id(layer, ptr as usize), true)
 	}
 }
 

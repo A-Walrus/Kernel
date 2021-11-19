@@ -20,10 +20,12 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	heap::setup(&boot_info.memory_regions);
 
 	//paging::print_table_recursive(paging::get_current_page_table(), 4);
+	let _a = Box::new(5);
+	serial_println!("");
+	let _b = Box::new(5);
+	serial_println!("");
+	let _c = Box::new(5);
+	serial_println!("");
 
-	let a = Box::new(5);
-	serial_println!("Box one");
-	let b = Box::new(5);
-	serial_println!("Done");
 	loop {}
 }

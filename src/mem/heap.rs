@@ -60,7 +60,7 @@ pub fn setup(memory_regions: &'static MemoryRegions) {
 }
 
 /// The connection between nodes in a doubly linked list
-type Link = Option<usize>;
+type Link = Option<*mut Node>;
 
 /// A node in a doubly linked list.
 #[derive(Debug, Copy, Clone)]
@@ -70,6 +70,12 @@ struct Node {
 	/// A link to the next node.
 	next: Link,
 }
+
+/// So that rust allows me to have static nodes, even though they use raw pointers which are not
+/// Send.
+/// # Safety
+/// This is only sound for a single threaded kernel!
+unsafe impl Send for Node {}
 
 /// The number of pairs of buddys (2 <sup> [LAYERS] </sup> - 1).
 const BUDDY_PAIRS: usize = (1 << LAYERS) - 1;
@@ -213,10 +219,10 @@ impl BuddyAllocator {
 		let node = BuddyAllocator::node_at_id(id);
 		match node.prev {
 			Some(prev) => {
-				(*(prev as *mut Node)).next = node.next;
+				(*prev).next = node.next;
 				match node.next {
 					Some(next) => {
-						(*(next as *mut Node)).prev = Some(prev);
+						(*next).prev = Some(prev);
 					}
 					None => {}
 				}
@@ -256,11 +262,11 @@ impl BuddyAllocator {
 				this_node = BuddyAllocator::node_at_id(id);
 			}
 			this_node.next = self.linked_lists[layer].next;
-			this_node.prev = Some(&mut self.linked_lists[layer] as *mut _ as usize);
-			self.linked_lists[layer].next = Some(this_node as *mut _ as usize);
+			this_node.prev = Some(&mut self.linked_lists[layer] as *mut _);
+			self.linked_lists[layer].next = Some(this_node as *mut _);
 			match this_node.next {
 				Some(next) => unsafe {
-					(*(next as *mut Node)).prev = Some(this_node as *mut _ as usize);
+					(*next).prev = Some(this_node as *mut _);
 				},
 				None => {}
 			}

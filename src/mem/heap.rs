@@ -104,8 +104,11 @@ impl BuddyAllocator {
 	/// returns index into [BuddyAllocator::linked_lists], which holds the smallest blocks big
 	/// enough to store something of the ```wanted_size```.
 	fn layer_from_size(wanted_size: usize) -> usize {
-		let log = wanted_size.log2() as usize;
-		LAYERS + LOG_SMALLEST_SIZE - 1 - max(log, LOG_SMALLEST_SIZE)
+		if wanted_size <= SMALLEST_SIZE {
+			return LAYERS - 1;
+		}
+		let log = ((wanted_size - 1).log2() + 1) as usize;
+		LAYERS + LOG_SMALLEST_SIZE - log - 1
 	}
 
 	/// Get the index of a block of a certain address in a certain layer.

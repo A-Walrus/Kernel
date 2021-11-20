@@ -6,7 +6,7 @@ static ALLOCATOR: Locked<BuddyAllocator> = Locked::new(BuddyAllocator::new());
 use crate::{mem::paging, serial_print, serial_println};
 use alloc::alloc::{GlobalAlloc, Layout};
 use bootloader::boot_info::MemoryRegions;
-use core::{mem::size_of, ptr::null_mut};
+use core::{cmp::max, mem::size_of, ptr::null_mut};
 
 const LOG_HEAP_SIZE: usize = 23; // 8MB
 const HEAP_SIZE: usize = 1 << LOG_HEAP_SIZE;
@@ -85,16 +85,11 @@ impl BuddyAllocator {
 		self.add_free_block(0, false)
 	}
 
-	// returns index into the [BuddyAllocator::linked_lists], which corrosponds to the proper size
-	// for this type.
+	/// returns index into [BuddyAllocator::linked_lists], which holds the smallest blocks big
+	/// enough to store something of the ```wanted_size```
 	fn layer_from_size(wanted_size: usize) -> usize {
-		let mut size = SMALLEST_SIZE;
-		let mut i = LAYERS - 1;
-		while wanted_size > size {
-			size = size << 1;
-			i -= 1;
-		}
-		i
+		let log = wanted_size.log2() as usize;
+		LAYERS + LOG_SMALLEST_SIZE - 1 - max(log, LOG_SMALLEST_SIZE)
 	}
 
 	fn get_id_in_layer(layer: usize, addr: usize) -> usize {

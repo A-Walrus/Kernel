@@ -6,6 +6,10 @@
 
 #![no_std]
 #![feature(abi_x86_interrupt)]
+#![feature(const_for)]
+#![feature(alloc_error_handler)]
+#![feature(int_log)]
+#![feature(const_mut_refs)]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
@@ -18,10 +22,9 @@ pub mod io;
 /// Dealing with memory: paging, tlb, alloc/heap...
 pub mod mem;
 
-use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 
-use io::serial;
+pub use io::serial;
 
 /// Panic handler is called automatically when a panic occurs, and prints the information to serial
 /// for debugging.

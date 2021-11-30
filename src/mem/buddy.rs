@@ -1,28 +1,28 @@
-extern crate alloc;
+use spin::Mutex;
 
-/// The static global allocator struct.
-#[global_allocator]
-static ALLOCATOR: Locked<BuddyAllocator> = Locked::new(BuddyAllocator::new());
+static ALLOCATOR: Mutex<BuddyAllocator> = Mutex::new(BuddyAllocator::new());
 
 use crate::{mem::paging, serial_print, serial_println};
-use alloc::alloc::{GlobalAlloc, Layout};
-use bootloader::boot_info::MemoryRegions;
+use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
 use core::{cmp::max, mem::size_of, ptr::null_mut};
+use paging::phys_to_virt;
+use x86_64::{structures::paging::PhysFrame, PhysAddr};
 
 /// The log of the size of the heap (the size of the heap must be a power of 2)
-const LOG_HEAP_SIZE: usize = 23; // 8MB
+const LOG_HEAP_SIZE: usize = 30; // 8MB
 /// The actual size of the heap (2 <sup> [LOG_HEAP_SIZE] </sup>)
 const HEAP_SIZE: usize = 1 << LOG_HEAP_SIZE;
-/// The starting (virtual) address of the heap.
-const HEAP_START: usize = 0xFFFF980000000000;
+
+/// The virtual address that the physical memory is mapped to.
+const HEAP_START: usize = 0xFFFFC00000000000;
 
 /// The log of the size of the smallest block (the sizes of all the blocks are powers of two.
-const LOG_SMALLEST_SIZE: usize = 5;
+const LOG_SMALLEST_SIZE: usize = 12;
 /// The size of the smallest block (2 <sup> [LOG_SMALLEST_SIZE] </sup>).
 /// This value must be big enough so that a [Node] will fit in it.
 const SMALLEST_SIZE: usize = 1 << LOG_SMALLEST_SIZE;
 /// The number of layers (block sizes) in this buddy allocator heap.
-const LAYERS: usize = LOG_HEAP_SIZE - LOG_SMALLEST_SIZE;
+const LAYERS: usize = LOG_HEAP_SIZE - LOG_SMALLEST_SIZE + 1;
 /// Array of the size of the blocks in each layer.
 const SIZES: [usize; LAYERS] = {
 	let mut size = HEAP_SIZE;
@@ -36,6 +36,8 @@ const SIZES: [usize; LAYERS] = {
 	layers
 };
 
+const FRAME_SIZE: usize = 4096;
+
 // Block IDs
 // +-------------------------------+
 // |               0               | Layer 0
@@ -47,16 +49,28 @@ const SIZES: [usize; LAYERS] = {
 // | 7 | 8 | 9 | A | B | C | D | E | Layer 3
 // +---+---+---+---+---+---+---+---+
 
+fn usable_frames(memory_regions: &'static MemoryRegions) -> impl Iterator<Item = PhysFrame> {
+	// get usable regions from memory map
+	let regions = memory_regions.iter();
+	let usable_regions = regions.filter(|r| r.kind == MemoryRegionKind::Usable);
+	// map each region to its address range
+	let addr_ranges = usable_regions.map(|r| r.start..r.end);
+	// transform to an iterator of frame start addresses
+	let frame_addresses = addr_ranges.flat_map(|r| r.step_by(FRAME_SIZE));
+	// create `PhysFrame` types from the start addresses
+	frame_addresses.map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
+}
+
 /// Set up heap mapping, and heap allocator.
 pub fn setup(memory_regions: &'static MemoryRegions) {
-	// Make sure that the smallest size is big enough to hold a node.
-	assert!(
-		size_of::<Node>() <= SMALLEST_SIZE,
-		"Smallest size is too small enough to fit a Node"
-	);
-
-	paging::map_heap(memory_regions, HEAP_START, HEAP_SIZE);
-	ALLOCATOR.lock().init();
+	let iterator = usable_frames(memory_regions);
+	let mut allcator = ALLOCATOR.lock();
+	for frame in iterator {
+		let phys_addr = frame.start_address();
+		let virt_addr = phys_to_virt(phys_addr);
+		let id = BuddyAllocator::get_id(LAYERS - 1, virt_addr.as_u64() as usize);
+		allcator.add_free_block(id, true)
+	}
 }
 
 /// The connection between nodes in a doubly linked list
@@ -100,11 +114,6 @@ impl BuddyAllocator {
 			xor_free: [false; BUDDY_PAIRS],
 			linked_lists: [empty; LAYERS],
 		}
-	}
-
-	/// Add the entire heap as a free block of layer 0.
-	fn init(&mut self) {
-		self.add_free_block(0, false)
 	}
 
 	/// returns index into [BuddyAllocator::linked_lists], which holds the smallest blocks big
@@ -271,45 +280,5 @@ impl BuddyAllocator {
 				None => {}
 			}
 		}
-	}
-}
-
-unsafe impl GlobalAlloc for Locked<BuddyAllocator> {
-	unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-		let mut allocator = self.lock();
-		let layer = BuddyAllocator::layer_from_size(layout.size());
-		BuddyAllocator::id_to_ptr(allocator.get_block(layer))
-	}
-
-	unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-		let mut allocator = self.lock();
-		let layer = BuddyAllocator::layer_from_size(layout.size());
-		allocator.add_free_block(BuddyAllocator::get_id(layer, ptr as usize), true)
-	}
-}
-
-/// The error handler for allocation errors. Called automatically by rust. It just prints the
-/// requested layout that caused the allocation fail.
-#[alloc_error_handler]
-fn alloc_error_handler(layout: Layout) -> ! {
-	panic!("allocation error: {:?}", layout)
-}
-
-/// A wrapper around [spin::Mutex] to permit trait implementations.
-pub struct Locked<A> {
-	inner: spin::Mutex<A>,
-}
-
-impl<A> Locked<A> {
-	/// Create a new locked struct with a certain inner
-	pub const fn new(inner: A) -> Self {
-		Locked {
-			inner: spin::Mutex::new(inner),
-		}
-	}
-
-	/// lock self and gain access to inner through a [spin::MutexGuard].
-	pub fn lock(&self) -> spin::MutexGuard<A> {
-		self.inner.lock()
 	}
 }

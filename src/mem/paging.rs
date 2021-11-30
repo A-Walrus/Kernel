@@ -15,7 +15,7 @@ use x86_64::{
 const PHYSICAL_MAPPING_OFFSET: u64 = 0xFFFFC00000000000;
 
 /// Translate physical address to virtual address by adding constant [PHYSICAL_MAPPING_OFFSET].
-fn phys_to_virt(phys: PhysAddr) -> VirtAddr {
+pub fn phys_to_virt(phys: PhysAddr) -> VirtAddr {
 	VirtAddr::new(phys.as_u64() + PHYSICAL_MAPPING_OFFSET)
 }
 

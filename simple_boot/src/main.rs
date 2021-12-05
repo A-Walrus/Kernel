@@ -6,6 +6,7 @@ use std::{
 const RUN_ARGS: &[&str] = &[
 	"--no-reboot",
 	"-s",
+	"-S",
 	"-machine",
 	"q35",
 	"-drive",
@@ -36,8 +37,9 @@ fn main() {
 
 	let uefi = create_disk_images(&kernel_binary_path);
 
+	println!("Kernel at `{}`", kernel_binary_path.display());
+	println!("Created disk image at `{}`", uefi.display());
 	if no_boot {
-		println!("Created disk image at `{}`", uefi.display());
 		return;
 	}
 

@@ -1,10 +1,11 @@
+use super::buddy;
 use crate::serial_println;
 use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
 use x86_64::{
 	addr::{PhysAddr, VirtAddr},
 	registers::control::Cr3,
 	structures::paging::{
-		mapper::{Mapper, OffsetPageTable},
+		mapper::{CleanUp, Mapper, OffsetPageTable},
 		page::Page,
 		page_table::PageTableFlags,
 		FrameAllocator, PageTable, PhysFrame, Size4KiB,
@@ -14,9 +15,40 @@ use x86_64::{
 /// Virtual address that the entire physical memory is mapped starting from.
 const PHYSICAL_MAPPING_OFFSET: u64 = 0xFFFFC00000000000;
 
+/// set up paging. Clean up the page table created by the bootloader.
+pub fn setup() {
+	let mut table;
+	unsafe {
+		table = get_offset_page_table(get_current_page_table());
+	}
+
+	print_table_recursive(table.level_4_table(), 4);
+
+	let lower_half = Page::range_inclusive(
+		Page::containing_address(VirtAddr::new(0)),
+		Page::containing_address(VirtAddr::new(0x0000_7fff_ffff_ffff)),
+	);
+
+	// serial_println!("");
+
+	unsafe {
+		table.clean_up_addr_range(lower_half, &mut *buddy::ALLOCATOR.lock());
+		// table.clean_up(&mut *buddy::ALLOCATOR.lock());
+		// table.unmap(Page::<Size4KiB>::from_start_address(VirtAddr::new(0)).unwrap());
+	}
+
+	print_table_recursive(table.level_4_table(), 4);
+}
+
 /// Translate physical address to virtual address by adding constant [PHYSICAL_MAPPING_OFFSET].
 pub fn phys_to_virt(phys: PhysAddr) -> VirtAddr {
 	VirtAddr::new(phys.as_u64() + PHYSICAL_MAPPING_OFFSET)
+}
+
+/// Translate virtual address **in the offset mapped area* to physical address by subtracting
+/// constant [PHYSICAL_MAPPING_OFFSET].
+pub fn virt_to_phys(virt: VirtAddr) -> PhysAddr {
+	PhysAddr::new(virt.as_u64() - PHYSICAL_MAPPING_OFFSET)
 }
 
 /// Returns a reference (with static lifetime) to the current top level page table.

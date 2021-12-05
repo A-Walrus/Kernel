@@ -15,7 +15,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	gdt::setup();
 	interrupts::setup();
 
+	// for region in boot_info.memory_regions.iter() {
+	// 	serial_println!("{:?}", region);
+	// }
+
 	buddy::setup(&boot_info.memory_regions);
+
+	paging::setup();
 
 	loop {}
 }

@@ -1,12 +1,21 @@
 use spin::Mutex;
 
-static ALLOCATOR: Mutex<BuddyAllocator> = Mutex::new(BuddyAllocator::new());
+/// static buddy allocator. It is wrapped in a mutex for safety. Used to allocate and deallocate
+/// frames.
+pub static ALLOCATOR: Mutex<BuddyAllocator> = Mutex::new(BuddyAllocator::new());
 
-use crate::{mem::paging, serial_print, serial_println};
+use super::paging;
+use crate::{serial_print, serial_println};
 use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
 use core::{cmp::max, mem::size_of, ptr::null_mut};
 use paging::phys_to_virt;
-use x86_64::{structures::paging::PhysFrame, PhysAddr};
+use x86_64::{
+	structures::paging::{
+		page::{Size1GiB, Size2MiB, Size4KiB},
+		FrameAllocator, FrameDeallocator, PageSize, PhysFrame,
+	},
+	PhysAddr, VirtAddr,
+};
 
 /// The log of the size of the heap (the size of the heap must be a power of 2)
 const LOG_HEAP_SIZE: usize = 30; // 8MB
@@ -186,7 +195,6 @@ impl BuddyAllocator {
 
 	/// Get a block of a given layer, returns block id
 	fn get_block(&mut self, layer: usize) -> usize {
-		serial_println!("GET AT LAYER {}", layer);
 		// Check if there is a block at the wanted layer:
 		match self.linked_lists[layer].next {
 			Some(next) => {
@@ -218,8 +226,6 @@ impl BuddyAllocator {
 	/// Take a block of a given id. This will remove it from the linked list, by relinking the
 	/// previous and next nodes. It will also update the [BuddyAllocator::xor_free] array.
 	unsafe fn remove_block(&mut self, id: usize) {
-		serial_println!("REMOVE {}", id);
-
 		if id != 0 {
 			let pair_id = BuddyAllocator::pair_id(id);
 			self.xor_free[pair_id] = !self.xor_free[pair_id];
@@ -248,7 +254,6 @@ impl BuddyAllocator {
 	/// it will attempt to merge it with its buddy, and if it can, recursively call itself on their
 	/// combined parent block.
 	fn add_free_block(&mut self, id: usize, with_merge: bool) {
-		serial_println!("ADD FREE {}", id);
 		// Check if it's buddy is free
 		if with_merge && id != 0 && self.xor_free[BuddyAllocator::pair_id(id)] {
 			// Buddy is free, can merge
@@ -280,5 +285,54 @@ impl BuddyAllocator {
 				None => {}
 			}
 		}
+	}
+}
+
+unsafe impl FrameAllocator<Size4KiB> for BuddyAllocator {
+	fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
+		let id = self.get_block(LAYERS - 1); // The last layer is 4KiB big
+		let virt = BuddyAllocator::id_to_ptr(id) as usize;
+		let phys = paging::virt_to_phys(VirtAddr::new(virt as u64));
+		Some(PhysFrame::from_start_address(phys).unwrap())
+	}
+}
+
+impl FrameDeallocator<Size4KiB> for BuddyAllocator {
+	unsafe fn deallocate_frame(&mut self, frame: PhysFrame<Size4KiB>) {
+		serial_println!("Deallocationg {:?}", frame);
+		let id = BuddyAllocator::get_id(LAYERS - 1, frame.start_address().as_u64() as usize);
+		self.add_free_block(id, true);
+	}
+}
+
+unsafe impl FrameAllocator<Size2MiB> for BuddyAllocator {
+	fn allocate_frame(&mut self) -> Option<PhysFrame<Size2MiB>> {
+		let id = self.get_block(LAYERS - 10); // The last layer is 4KiB big
+		let virt = BuddyAllocator::id_to_ptr(id) as usize;
+		let phys = paging::virt_to_phys(VirtAddr::new(virt as u64));
+		Some(PhysFrame::from_start_address(phys).unwrap())
+	}
+}
+
+impl FrameDeallocator<Size2MiB> for BuddyAllocator {
+	unsafe fn deallocate_frame(&mut self, frame: PhysFrame<Size2MiB>) {
+		let id = BuddyAllocator::get_id(LAYERS - 10, frame.start_address().as_u64() as usize);
+		self.add_free_block(id, true);
+	}
+}
+
+unsafe impl FrameAllocator<Size1GiB> for BuddyAllocator {
+	fn allocate_frame(&mut self) -> Option<PhysFrame<Size1GiB>> {
+		let id = self.get_block(LAYERS - 19); // The last layer is 4KiB big
+		let virt = BuddyAllocator::id_to_ptr(id) as usize;
+		let phys = paging::virt_to_phys(VirtAddr::new(virt as u64));
+		Some(PhysFrame::from_start_address(phys).unwrap())
+	}
+}
+
+impl FrameDeallocator<Size1GiB> for BuddyAllocator {
+	unsafe fn deallocate_frame(&mut self, frame: PhysFrame<Size1GiB>) {
+		let id = BuddyAllocator::get_id(LAYERS - 19, frame.start_address().as_u64() as usize);
+		self.add_free_block(id, true);
 	}
 }

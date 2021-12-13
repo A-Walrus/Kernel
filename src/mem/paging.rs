@@ -1,13 +1,14 @@
 use super::buddy;
 use crate::serial_println;
 use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
+use core::iter;
 use x86_64::{
 	addr::{PhysAddr, VirtAddr},
 	registers::control::Cr3,
 	structures::paging::{
 		mapper::{CleanUp, Mapper, OffsetPageTable},
-		page::Page,
-		page_table::PageTableFlags,
+		page::{Page, PageRangeInclusive},
+		page_table::{PageTableEntry, PageTableFlags},
 		FrameAllocator, PageTable, PhysFrame, Size4KiB,
 	},
 };
@@ -24,18 +25,10 @@ pub fn setup() {
 
 	print_table_recursive(table.level_4_table(), 4);
 
-	let lower_half = Page::range_inclusive(
-		Page::containing_address(VirtAddr::new(0)),
-		Page::containing_address(VirtAddr::new(0x0000_7fff_ffff_ffff)),
-	);
-
-	// serial_println!("");
-
-	unsafe {
-		table.clean_up_addr_range(lower_half, &mut *buddy::ALLOCATOR.lock());
-		// table.clean_up(&mut *buddy::ALLOCATOR.lock());
-		// table.unmap(Page::<Size4KiB>::from_start_address(VirtAddr::new(0)).unwrap());
-	}
+	// let lower_half = Page::range_inclusive(
+	// 	Page::containing_address(VirtAddr::new(0)),
+	// 	Page::containing_address(VirtAddr::new(0x0000_7fff_ffff_ffff)),
+	// );
 
 	print_table_recursive(table.level_4_table(), 4);
 }
@@ -103,7 +96,7 @@ pub fn print_table_recursive(page_table: &PageTable, depth: usize) {
 			let padding = PADDINGS[4 - depth];
 			serial_println!("{}L{} Entry {}: {:?}", padding, depth, i, entry);
 			if depth > 1 {
-				let sub_table = get_sub_table(page_table, i);
+				let sub_table = get_sub_table(&page_table[i]);
 				if let Ok(table) = sub_table {
 					print_table_recursive(table, depth - 1);
 				}
@@ -123,8 +116,7 @@ pub enum SubPageError {
 
 /// Gets the sub table at a certain index in a page table, where `0 ≤ index < 512`. If the entry is
 /// unused, or is a huge page and not a page table, an error will be returned.
-pub fn get_sub_table<'a>(page_table: &'a PageTable, index: usize) -> Result<&'a PageTable, SubPageError> {
-	let entry = &page_table[index];
+pub fn get_sub_table<'a>(entry: &PageTableEntry) -> Result<&'a PageTable, SubPageError> {
 	if entry.is_unused() {
 		Err(SubPageError::EntryUnused)
 	} else if entry.flags().contains(PageTableFlags::HUGE_PAGE) {
@@ -175,35 +167,5 @@ unsafe impl FrameAllocator<Size4KiB> for BootFrameAllocator {
 		let frame = self.usable_frames().nth(self.next);
 		self.next += 1;
 		frame
-	}
-}
-
-/// Create a mapping in the page table for the kernel heap.
-pub fn map_heap(memory_regions: &'static MemoryRegions, start: usize, size: usize) {
-	let mut mapper;
-	let mut frame_allocator;
-	unsafe {
-		mapper = get_offset_page_table(get_current_page_table());
-		frame_allocator = BootFrameAllocator::new(memory_regions);
-	}
-
-	let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-
-	let page_range = {
-		let heap_start = VirtAddr::new(start as u64);
-		let heap_end = heap_start + size - 1u64;
-		let heap_start_page = Page::containing_address(heap_start);
-		let heap_end_page = Page::containing_address(heap_end);
-		Page::range_inclusive(heap_start_page, heap_end_page)
-	};
-
-	for page in page_range {
-		let frame = frame_allocator.allocate_frame().unwrap();
-		unsafe {
-			mapper
-				.map_to(page, frame, flags, &mut frame_allocator)
-				.expect("mapping failed")
-				.flush();
-		}
 	}
 }

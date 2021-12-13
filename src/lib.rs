@@ -4,12 +4,12 @@
 //!
 //! [Bootloader Crate]: https://crates.io/crates/bootloader
 
-#![no_std]
-#![feature(abi_x86_interrupt)]
-#![feature(const_for)]
-#![feature(alloc_error_handler)]
-#![feature(int_log)]
-#![feature(const_mut_refs)]
+#![no_std] // No standard library
+#![feature(abi_x86_interrupt)] // x86 interrupts
+#![feature(const_for)] // for loops in const functions
+#![feature(const_mut_refs)] // mutable references inside const functions
+#![feature(alloc_error_handler)] // error handler for alloc failiures
+#![feature(int_log)] // log2 for ints (using single assembly instruction to find highest bit)
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 

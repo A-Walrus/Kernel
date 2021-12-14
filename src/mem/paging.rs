@@ -1,5 +1,5 @@
 use super::buddy;
-use crate::serial_println;
+use crate::{serial_print, serial_println};
 use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
 use core::iter;
 use x86_64::{
@@ -9,7 +9,7 @@ use x86_64::{
 		mapper::{CleanUp, Mapper, OffsetPageTable},
 		page::{Page, PageRangeInclusive},
 		page_table::{PageTableEntry, PageTableFlags},
-		FrameAllocator, PageTable, PhysFrame, Size4KiB,
+		FrameAllocator, FrameDeallocator, PageTable, PhysFrame, Size1GiB, Size2MiB, Size4KiB,
 	},
 };
 
@@ -18,19 +18,69 @@ const PHYSICAL_MAPPING_OFFSET: u64 = 0xFFFFC00000000000;
 
 /// set up paging. Clean up the page table created by the bootloader.
 pub fn setup() {
-	let mut table;
-	unsafe {
-		table = get_offset_page_table(get_current_page_table());
+	let mut table = get_current_page_table();
+
+	print_table_recursive(table, 4);
+	// for i in 0..10000 {
+	// 	serial_print!("");
+	// }
+
+	// iterate over the lower half of the address space.
+	for entry in table.iter_mut().take(256).filter(|entry| !entry.is_unused()) {
+		wipe_recursive(entry, 4);
 	}
 
-	print_table_recursive(table.level_4_table(), 4);
+	serial_println!("I'm still alive!");
+	print_table_recursive(table, 4);
+}
 
-	// let lower_half = Page::range_inclusive(
-	// 	Page::containing_address(VirtAddr::new(0)),
-	// 	Page::containing_address(VirtAddr::new(0x0000_7fff_ffff_ffff)),
-	// );
-
-	print_table_recursive(table.level_4_table(), 4);
+fn wipe_recursive(entry: &mut PageTableEntry, depth: usize) {
+	serial_println!("WIPING L{}: {:?} ", depth, entry);
+	let sub_table = get_sub_table_mut(entry);
+	if depth > 1 {
+		serial_println!("Inside if");
+		match sub_table {
+			Err(SubPageError::HugePage) => unsafe {
+				serial_println!("Huge page");
+				match depth {
+					3 => {
+						buddy::ALLOCATOR
+							.lock()
+							.deallocate_frame(PhysFrame::<Size1GiB>::from_start_address(entry.addr()).unwrap());
+					}
+					2 => {
+						buddy::ALLOCATOR
+							.lock()
+							.deallocate_frame(PhysFrame::<Size2MiB>::from_start_address(entry.addr()).unwrap());
+					}
+					_ => {
+						unreachable!("The only depths with huge pages are 2 and 3");
+					}
+				}
+			},
+			Ok(table) => {
+				serial_println!("table");
+				for sub_entry in table.iter_mut().filter(|entry| !entry.is_unused()) {
+					wipe_recursive(sub_entry, depth - 1);
+				}
+				unsafe {
+					buddy::ALLOCATOR
+						.lock()
+						.deallocate_frame(PhysFrame::<Size4KiB>::from_start_address(entry.addr()).unwrap());
+				}
+			}
+			Err(SubPageError::EntryUnused) => {
+				unreachable!("Tried to wipe entry that is unused");
+			}
+		}
+	} else {
+		unsafe {
+			buddy::ALLOCATOR
+				.lock()
+				.deallocate_frame(PhysFrame::<Size4KiB>::from_start_address(entry.addr()).unwrap());
+		}
+	}
+	entry.set_unused();
 }
 
 /// Translate physical address to virtual address by adding constant [PHYSICAL_MAPPING_OFFSET].
@@ -111,7 +161,7 @@ pub enum SubPageError {
 	/// The entry is unused.
 	EntryUnused,
 	/// The entry is not a page table, its a huge page.
-	NotAPageTable,
+	HugePage,
 }
 
 /// Gets the sub table at a certain index in a page table, where `0 ≤ index < 512`. If the entry is
@@ -120,7 +170,20 @@ pub fn get_sub_table<'a>(entry: &PageTableEntry) -> Result<&'a PageTable, SubPag
 	if entry.is_unused() {
 		Err(SubPageError::EntryUnused)
 	} else if entry.flags().contains(PageTableFlags::HUGE_PAGE) {
-		Err(SubPageError::NotAPageTable)
+		Err(SubPageError::HugePage)
+	} else {
+		let phys_addr = entry.addr();
+		Ok(unsafe { get_page_table_by_addr(phys_addr) })
+	}
+}
+
+/// Gets the sub table at a certain index in a page table, where `0 ≤ index < 512`. If the entry is
+/// unused, or is a huge page and not a page table, an error will be returned.
+pub fn get_sub_table_mut<'a>(entry: &mut PageTableEntry) -> Result<&'a mut PageTable, SubPageError> {
+	if entry.is_unused() {
+		Err(SubPageError::EntryUnused)
+	} else if entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+		Err(SubPageError::HugePage)
 	} else {
 		let phys_addr = entry.addr();
 		Ok(unsafe { get_page_table_by_addr(phys_addr) })

@@ -76,6 +76,7 @@ pub fn setup(memory_regions: &'static MemoryRegions) {
 	let mut allcator = ALLOCATOR.lock();
 	for frame in iterator {
 		let phys_addr = frame.start_address();
+		serial_println!("BUDDY ADDING: {:?}", phys_addr);
 		let virt_addr = phys_to_virt(phys_addr);
 		let id = BuddyAllocator::get_id(LAYERS - 1, virt_addr.as_u64() as usize);
 		allcator.add_free_block(id, true)
@@ -299,8 +300,11 @@ unsafe impl FrameAllocator<Size4KiB> for BuddyAllocator {
 
 impl FrameDeallocator<Size4KiB> for BuddyAllocator {
 	unsafe fn deallocate_frame(&mut self, frame: PhysFrame<Size4KiB>) {
-		serial_println!("Deallocationg {:?}", frame);
-		let id = BuddyAllocator::get_id(LAYERS - 1, frame.start_address().as_u64() as usize);
+		serial_println!("4KiB");
+		let id = BuddyAllocator::get_id(
+			LAYERS - 1,
+			paging::phys_to_virt(frame.start_address()).as_u64() as usize,
+		);
 		self.add_free_block(id, true);
 	}
 }
@@ -316,7 +320,12 @@ unsafe impl FrameAllocator<Size2MiB> for BuddyAllocator {
 
 impl FrameDeallocator<Size2MiB> for BuddyAllocator {
 	unsafe fn deallocate_frame(&mut self, frame: PhysFrame<Size2MiB>) {
-		let id = BuddyAllocator::get_id(LAYERS - 10, frame.start_address().as_u64() as usize);
+		serial_println!("2KiB");
+		let id = BuddyAllocator::get_id(
+			LAYERS - 10,
+			paging::phys_to_virt(frame.start_address()).as_u64() as usize,
+		);
+
 		self.add_free_block(id, true);
 	}
 }
@@ -332,7 +341,11 @@ unsafe impl FrameAllocator<Size1GiB> for BuddyAllocator {
 
 impl FrameDeallocator<Size1GiB> for BuddyAllocator {
 	unsafe fn deallocate_frame(&mut self, frame: PhysFrame<Size1GiB>) {
-		let id = BuddyAllocator::get_id(LAYERS - 19, frame.start_address().as_u64() as usize);
+		serial_println!("1GiB");
+		let id = BuddyAllocator::get_id(
+			LAYERS - 19,
+			paging::phys_to_virt(frame.start_address()).as_u64() as usize,
+		);
 		self.add_free_block(id, true);
 	}
 }

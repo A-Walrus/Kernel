@@ -18,30 +18,24 @@ const PHYSICAL_MAPPING_OFFSET: u64 = 0xFFFFC00000000000;
 
 /// set up paging. Clean up the page table created by the bootloader.
 pub fn setup() {
-	let mut table = get_current_page_table();
+	let table = get_current_page_table();
 
-	print_table_recursive(table, 4);
-	// for i in 0..10000 {
-	// 	serial_print!("");
-	// }
+	for entry in table.iter_mut().take(256).filter(|entry| !entry.is_unused()) {
+		entry.set_unused()
+	}
+}
 
-	// iterate over the lower half of the address space.
+unsafe fn wipe_lower_half(table: &mut PageTable) {
 	for entry in table.iter_mut().take(256).filter(|entry| !entry.is_unused()) {
 		wipe_recursive(entry, 4);
 	}
-
-	serial_println!("I'm still alive!");
-	print_table_recursive(table, 4);
 }
 
-fn wipe_recursive(entry: &mut PageTableEntry, depth: usize) {
-	serial_println!("WIPING L{}: {:?} ", depth, entry);
+unsafe fn wipe_recursive(entry: &mut PageTableEntry, depth: usize) {
 	let sub_table = get_sub_table_mut(entry);
 	if depth > 1 {
-		serial_println!("Inside if");
 		match sub_table {
 			Err(SubPageError::HugePage) => unsafe {
-				serial_println!("Huge page");
 				match depth {
 					3 => {
 						buddy::ALLOCATOR
@@ -59,7 +53,6 @@ fn wipe_recursive(entry: &mut PageTableEntry, depth: usize) {
 				}
 			},
 			Ok(table) => {
-				serial_println!("table");
 				for sub_entry in table.iter_mut().filter(|entry| !entry.is_unused()) {
 					wipe_recursive(sub_entry, depth - 1);
 				}

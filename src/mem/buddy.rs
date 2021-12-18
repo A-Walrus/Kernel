@@ -18,7 +18,7 @@ use x86_64::{
 };
 
 /// The log of the size of the heap (the size of the heap must be a power of 2)
-const LOG_HEAP_SIZE: usize = 30; // 8MB
+const LOG_HEAP_SIZE: usize = 36; // 64GiB max ram size
 /// The actual size of the heap (2 <sup> [LOG_HEAP_SIZE] </sup>)
 const HEAP_SIZE: usize = 1 << LOG_HEAP_SIZE;
 

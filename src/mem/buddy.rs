@@ -18,7 +18,7 @@ use x86_64::{
 };
 
 /// The log of the size of the heap (the size of the heap must be a power of 2)
-const LOG_HEAP_SIZE: usize = 36; // 64GiB max ram size
+const LOG_HEAP_SIZE: usize = 35; // 32 GiB max ram size
 /// The actual size of the heap (2 <sup> [LOG_HEAP_SIZE] </sup>)
 const HEAP_SIZE: usize = 1 << LOG_HEAP_SIZE;
 
@@ -72,13 +72,14 @@ fn usable_frames(memory_regions: &'static MemoryRegions) -> impl Iterator<Item =
 
 /// Set up heap mapping, and heap allocator.
 pub fn setup(memory_regions: &'static MemoryRegions) {
+	serial_println!("buddy pairs: {}", BUDDY_PAIRS);
 	let iterator = usable_frames(memory_regions);
-	let mut allcator = ALLOCATOR.lock();
+	let mut allocator = ALLOCATOR.lock();
 	for frame in iterator {
 		let phys_addr = frame.start_address();
 		let virt_addr = phys_to_virt(phys_addr);
 		let id = BuddyAllocator::get_id(LAYERS - 1, virt_addr.as_u64() as usize);
-		allcator.add_free_block(id, true)
+		allocator.add_free_block(id, true)
 	}
 }
 
@@ -233,7 +234,7 @@ impl BuddyAllocator {
 	/// Take a block of a given id. This will remove it from the linked list, by relinking the
 	/// previous and next nodes. It will also update the [BuddyAllocator::xor_free] array.
 	unsafe fn remove_block(&mut self, id: usize) {
-		self.free_space += SIZES[BuddyAllocator::layer_from_id(id)];
+		self.free_space -= SIZES[BuddyAllocator::layer_from_id(id)];
 		if id != 0 {
 			let pair_id = BuddyAllocator::pair_id(id);
 			self.xor_free[pair_id] = !self.xor_free[pair_id];

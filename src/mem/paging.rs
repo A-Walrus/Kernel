@@ -48,8 +48,9 @@ pub fn map(range: PageRangeInclusive, table: &mut PageTable) {
 pub fn setup() {
 	let table = get_current_page_table();
 
-	unsafe {
-		wipe_lower_half(table);
+	// This is kind of a memory leak, sort of...
+	for entry in table.iter_mut().take(256).filter(|entry| !entry.is_unused()) {
+		entry.set_unused()
 	}
 }
 

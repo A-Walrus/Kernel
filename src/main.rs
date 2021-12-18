@@ -17,7 +17,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	gdt::setup();
 	interrupts::setup();
 	paging::setup();
+	serial_println!("About to setup buddy allocator!");
 	buddy::setup(&boot_info.memory_regions);
+	serial_println!("Free RAM: {}", buddy::ALLOCATOR.lock().get_free_space());
 	heap::setup();
 	serial_println!("Setup complete!");
 

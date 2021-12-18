@@ -113,6 +113,7 @@ pub struct BuddyAllocator {
 
 	/// linked list of free blocks for every layer.
 	linked_lists: [Node; LAYERS],
+	free_space: usize,
 }
 
 impl BuddyAllocator {
@@ -122,7 +123,13 @@ impl BuddyAllocator {
 		BuddyAllocator {
 			xor_free: [false; BUDDY_PAIRS],
 			linked_lists: [empty; LAYERS],
+			free_space: 0,
 		}
+	}
+
+	/// Returns how much free space (in bytes) does the buddy allocator hold.
+	pub fn get_free_space(&self) -> usize {
+		self.free_space
 	}
 
 	/// returns index into [BuddyAllocator::linked_lists], which holds the smallest blocks big
@@ -226,6 +233,13 @@ impl BuddyAllocator {
 	/// Take a block of a given id. This will remove it from the linked list, by relinking the
 	/// previous and next nodes. It will also update the [BuddyAllocator::xor_free] array.
 	unsafe fn remove_block(&mut self, id: usize) {
+		serial_println!(
+			"Removing node {}, at layer {}(+1)/{}",
+			id,
+			BuddyAllocator::layer_from_id(id),
+			LAYERS
+		);
+		self.free_space += SIZES[BuddyAllocator::layer_from_id(id)];
 		if id != 0 {
 			let pair_id = BuddyAllocator::pair_id(id);
 			self.xor_free[pair_id] = !self.xor_free[pair_id];
@@ -244,7 +258,7 @@ impl BuddyAllocator {
 			}
 			None => {
 				// This should never happen.
-				unreachable!("Tried to remove first node, this shouldn't happen");
+				unreachable!("All nodes should have a previous node, and yet this one doesn't?");
 			}
 		}
 	}
@@ -254,11 +268,14 @@ impl BuddyAllocator {
 	/// it will attempt to merge it with its buddy, and if it can, recursively call itself on their
 	/// combined parent block.
 	fn add_free_block(&mut self, id: usize, with_merge: bool) {
+		serial_println!("Add free block {}, with merge {}", id, with_merge);
 		// Check if it's buddy is free
 		if with_merge && id != 0 && self.xor_free[BuddyAllocator::pair_id(id)] {
+			let buddy_id = BuddyAllocator::get_buddy_id(id);
+			serial_println!("Merging {} with {}", id, buddy_id);
 			// Buddy is free, can merge
 			unsafe {
-				self.remove_block(BuddyAllocator::get_buddy_id(id));
+				self.remove_block(buddy_id);
 			}
 
 			let parent_id = BuddyAllocator::get_parent_id(id);
@@ -271,6 +288,7 @@ impl BuddyAllocator {
 			}
 
 			let layer = BuddyAllocator::layer_from_id(id);
+			self.free_space += SIZES[layer];
 			let this_node: &mut Node;
 			unsafe {
 				this_node = BuddyAllocator::node_at_id(id);

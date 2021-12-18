@@ -72,6 +72,16 @@ fn usable_frames(memory_regions: &'static MemoryRegions) -> impl Iterator<Item =
 
 /// Set up heap mapping, and heap allocator.
 pub fn setup(memory_regions: &'static MemoryRegions) {
+	{
+		for a in usable_frames(memory_regions) {
+			for b in usable_frames(memory_regions) {
+				if a == b {
+					serial_println!("Duplicate {:?}", a);
+				}
+			}
+		}
+	}
+
 	let iterator = usable_frames(memory_regions);
 	let mut allcator = ALLOCATOR.lock();
 	for frame in iterator {

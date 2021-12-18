@@ -16,12 +16,40 @@ use x86_64::{
 /// Virtual address that the entire physical memory is mapped starting from.
 const PHYSICAL_MAPPING_OFFSET: u64 = 0xFFFFC00000000000;
 
+/// Map the given range of pages, to anywhere in the physical memory, on the current page table. Allocate
+/// frames for them.
+pub fn map_in_current(range: PageRangeInclusive) {
+	map(range, get_current_page_table());
+}
+
+/// Map the given range of pages, to anywhere in the physical memory, on the given page table. Allocate
+/// frames for them.
+pub fn map(range: PageRangeInclusive, table: &mut PageTable) {
+	let mut offset_table: OffsetPageTable;
+	unsafe {
+		offset_table = get_offset_page_table(table);
+	}
+	let mut frame_allocator = buddy::ALLOCATOR.lock();
+	for (i, page) in range.enumerate() {
+		// serial_println!("Page index: {:?}", i);
+		unsafe {
+			let frame = frame_allocator.allocate_frame().unwrap();
+			let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+			let result = offset_table.map_to(page, frame, flags, &mut *frame_allocator);
+			match result {
+				Ok(flush) => flush.flush(),
+				Err(e) => serial_println!("Failed to map! {:?}", e),
+			}
+		}
+	}
+}
+
 /// set up paging. Clean up the page table created by the bootloader.
 pub fn setup() {
 	let table = get_current_page_table();
 
-	for entry in table.iter_mut().take(256).filter(|entry| !entry.is_unused()) {
-		entry.set_unused()
+	unsafe {
+		wipe_lower_half(table);
 	}
 }
 

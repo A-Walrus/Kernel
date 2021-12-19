@@ -72,12 +72,22 @@ fn usable_frames(memory_regions: &'static MemoryRegions) -> impl Iterator<Item =
 
 /// Set up heap mapping, and heap allocator.
 pub fn setup(memory_regions: &'static MemoryRegions) {
-	serial_println!("buddy pairs: {}", BUDDY_PAIRS);
+	for item in usable_frames(memory_regions) {
+		serial_println!("Frame: {:?}", item);
+	}
+
 	let iterator = usable_frames(memory_regions);
 	let mut allocator = ALLOCATOR.lock();
-	for frame in iterator {
+	for (i, frame) in iterator.enumerate() {
+		// serial_println!("{}: {:?}", i, frame);
+		for _ in 0..10000 {
+			use x86_64::instructions::nop;
+			nop();
+		}
+
 		let phys_addr = frame.start_address();
 		let virt_addr = phys_to_virt(phys_addr);
+		// serial_println!("Virt addr: {:#x}", virt_addr);
 		let id = BuddyAllocator::get_id(LAYERS - 1, virt_addr.as_u64() as usize);
 		allocator.add_free_block(id, true)
 	}
@@ -165,7 +175,9 @@ impl BuddyAllocator {
 		let addr = HEAP_START;
 		let layer = BuddyAllocator::layer_from_id(id);
 		let pos_in_layer = BuddyAllocator::pos_in_layer(id, layer);
-		(addr + (SIZES[layer] * pos_in_layer)) as *mut u8
+		let res = (addr + (SIZES[layer] * pos_in_layer)) as *mut u8;
+		// serial_println!("Pointer {:?}", res);
+		res
 	}
 
 	/// Get a reference to the node at a given id.
@@ -263,6 +275,7 @@ impl BuddyAllocator {
 	/// it will attempt to merge it with its buddy, and if it can, recursively call itself on their
 	/// combined parent block.
 	fn add_free_block(&mut self, id: usize, with_merge: bool) {
+		// serial_println!("Adding block {}", id);
 		// Check if it's buddy is free
 		if with_merge && id != 0 && self.xor_free[BuddyAllocator::pair_id(id)] {
 			let buddy_id = BuddyAllocator::get_buddy_id(id);
@@ -303,6 +316,7 @@ unsafe impl FrameAllocator<Size4KiB> for BuddyAllocator {
 	fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
 		let id = self.get_block(LAYERS - 1); // The last layer is 4KiB big
 		let virt = BuddyAllocator::id_to_ptr(id) as usize;
+		// serial_println!("Virt {}", virt);
 		let phys = paging::virt_to_phys(VirtAddr::new(virt as u64));
 		Some(PhysFrame::from_start_address(phys).unwrap())
 	}

@@ -1,22 +1,118 @@
-use crate::serial_println;
+use super::buddy;
+use crate::{serial_print, serial_println};
 use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
+use core::iter;
 use x86_64::{
 	addr::{PhysAddr, VirtAddr},
 	registers::control::Cr3,
 	structures::paging::{
-		mapper::{Mapper, OffsetPageTable},
-		page::Page,
-		page_table::PageTableFlags,
-		FrameAllocator, PageTable, PhysFrame, Size4KiB,
+		mapper::{CleanUp, Mapper, OffsetPageTable},
+		page::{Page, PageRangeInclusive},
+		page_table::{PageTableEntry, PageTableFlags},
+		FrameAllocator, FrameDeallocator, PageTable, PhysFrame, Size1GiB, Size2MiB, Size4KiB,
 	},
 };
 
 /// Virtual address that the entire physical memory is mapped starting from.
 const PHYSICAL_MAPPING_OFFSET: u64 = 0xFFFFC00000000000;
 
+/// Map the given range of pages, to anywhere in the physical memory, on the current page table. Allocate
+/// frames for them.
+pub fn map_in_current(range: PageRangeInclusive) {
+	let table = get_current_page_table();
+	map(range, table);
+}
+
+/// Map the given range of pages, to anywhere in the physical memory, on the given page table. Allocate
+/// frames for them.
+pub fn map(range: PageRangeInclusive, table: &mut PageTable) {
+	let mut offset_table: OffsetPageTable;
+	unsafe {
+		offset_table = get_offset_page_table(table);
+	}
+	let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+	let mut frame_allocator = buddy::ALLOCATOR.lock();
+	for page in range {
+		unsafe {
+			let frame = frame_allocator.allocate_frame().unwrap();
+			let result = offset_table.map_to(page, frame, flags, &mut *frame_allocator);
+			match result {
+				Ok(flush) => flush.flush(),
+				Err(e) => serial_println!("Failed to map! {:?}", e),
+			}
+		}
+	}
+}
+
+/// set up paging. Clean up the page table created by the bootloader.
+pub fn setup() {
+	let table = get_current_page_table();
+
+	unsafe {
+		wipe_lower_half(table);
+	}
+}
+
+unsafe fn wipe_lower_half(table: &mut PageTable) {
+	for entry in table.iter_mut().take(256).filter(|entry| !entry.is_unused()) {
+		wipe_recursive(entry, 4);
+	}
+}
+
+unsafe fn wipe_recursive(entry: &mut PageTableEntry, depth: usize) {
+	let sub_table = get_sub_table_mut(entry);
+	if depth > 1 {
+		match sub_table {
+			Err(SubPageError::HugePage) => unsafe {
+				match depth {
+					3 => {
+						buddy::ALLOCATOR
+							.lock()
+							.deallocate_frame(PhysFrame::<Size1GiB>::from_start_address(entry.addr()).unwrap());
+					}
+					2 => {
+						buddy::ALLOCATOR
+							.lock()
+							.deallocate_frame(PhysFrame::<Size2MiB>::from_start_address(entry.addr()).unwrap());
+					}
+					_ => {
+						unreachable!("The only depths with huge pages are 2 and 3");
+					}
+				}
+			},
+			Ok(table) => {
+				for sub_entry in table.iter_mut().filter(|entry| !entry.is_unused()) {
+					wipe_recursive(sub_entry, depth - 1);
+				}
+				unsafe {
+					buddy::ALLOCATOR
+						.lock()
+						.deallocate_frame(PhysFrame::<Size4KiB>::from_start_address(entry.addr()).unwrap());
+				}
+			}
+			Err(SubPageError::EntryUnused) => {
+				unreachable!("Tried to wipe entry that is unused");
+			}
+		}
+	} else {
+		unsafe {
+			buddy::ALLOCATOR
+				.lock()
+				.deallocate_frame(PhysFrame::<Size4KiB>::from_start_address(entry.addr()).unwrap());
+		}
+	}
+	entry.set_unused();
+}
+
 /// Translate physical address to virtual address by adding constant [PHYSICAL_MAPPING_OFFSET].
-fn phys_to_virt(phys: PhysAddr) -> VirtAddr {
+pub fn phys_to_virt(phys: PhysAddr) -> VirtAddr {
 	VirtAddr::new(phys.as_u64() + PHYSICAL_MAPPING_OFFSET)
+}
+
+/// Translate virtual address **in the offset mapped area* to physical address by subtracting
+/// constant [PHYSICAL_MAPPING_OFFSET].
+pub fn virt_to_phys(virt: VirtAddr) -> PhysAddr {
+	PhysAddr::new(virt.as_u64() - PHYSICAL_MAPPING_OFFSET)
 }
 
 /// Returns a reference (with static lifetime) to the current top level page table.
@@ -35,7 +131,7 @@ pub fn get_current_page_table() -> &'static mut PageTable {
 /// The caller must insure:
 /// * The page table is a level 4 table
 /// * The entire physical memory is mapped in this page table at [PHYSICAL_MAPPING_OFFSET].
-unsafe fn get_offset_page_table(page_table: &mut PageTable) -> OffsetPageTable {
+pub unsafe fn get_offset_page_table(page_table: &mut PageTable) -> OffsetPageTable {
 	let offset = VirtAddr::new(PHYSICAL_MAPPING_OFFSET);
 	unsafe { OffsetPageTable::new(page_table, offset) }
 }
@@ -71,7 +167,7 @@ pub fn print_table_recursive(page_table: &PageTable, depth: usize) {
 			let padding = PADDINGS[4 - depth];
 			serial_println!("{}L{} Entry {}: {:?}", padding, depth, i, entry);
 			if depth > 1 {
-				let sub_table = get_sub_table(page_table, i);
+				let sub_table = get_sub_table(&page_table[i]);
 				if let Ok(table) = sub_table {
 					print_table_recursive(table, depth - 1);
 				}
@@ -86,17 +182,29 @@ pub enum SubPageError {
 	/// The entry is unused.
 	EntryUnused,
 	/// The entry is not a page table, its a huge page.
-	NotAPageTable,
+	HugePage,
 }
 
 /// Gets the sub table at a certain index in a page table, where `0 ≤ index < 512`. If the entry is
 /// unused, or is a huge page and not a page table, an error will be returned.
-pub fn get_sub_table<'a>(page_table: &'a PageTable, index: usize) -> Result<&'a PageTable, SubPageError> {
-	let entry = &page_table[index];
+pub fn get_sub_table<'a>(entry: &PageTableEntry) -> Result<&'a PageTable, SubPageError> {
 	if entry.is_unused() {
 		Err(SubPageError::EntryUnused)
 	} else if entry.flags().contains(PageTableFlags::HUGE_PAGE) {
-		Err(SubPageError::NotAPageTable)
+		Err(SubPageError::HugePage)
+	} else {
+		let phys_addr = entry.addr();
+		Ok(unsafe { get_page_table_by_addr(phys_addr) })
+	}
+}
+
+/// Gets the sub table at a certain index in a page table, where `0 ≤ index < 512`. If the entry is
+/// unused, or is a huge page and not a page table, an error will be returned.
+pub fn get_sub_table_mut<'a>(entry: &mut PageTableEntry) -> Result<&'a mut PageTable, SubPageError> {
+	if entry.is_unused() {
+		Err(SubPageError::EntryUnused)
+	} else if entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+		Err(SubPageError::HugePage)
 	} else {
 		let phys_addr = entry.addr();
 		Ok(unsafe { get_page_table_by_addr(phys_addr) })
@@ -143,35 +251,5 @@ unsafe impl FrameAllocator<Size4KiB> for BootFrameAllocator {
 		let frame = self.usable_frames().nth(self.next);
 		self.next += 1;
 		frame
-	}
-}
-
-/// Create a mapping in the page table for the kernel heap.
-pub fn map_heap(memory_regions: &'static MemoryRegions, start: usize, size: usize) {
-	let mut mapper;
-	let mut frame_allocator;
-	unsafe {
-		mapper = get_offset_page_table(get_current_page_table());
-		frame_allocator = BootFrameAllocator::new(memory_regions);
-	}
-
-	let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-
-	let page_range = {
-		let heap_start = VirtAddr::new(start as u64);
-		let heap_end = heap_start + size - 1u64;
-		let heap_start_page = Page::containing_address(heap_start);
-		let heap_end_page = Page::containing_address(heap_end);
-		Page::range_inclusive(heap_start_page, heap_end_page)
-	};
-
-	for page in page_range {
-		let frame = frame_allocator.allocate_frame().unwrap();
-		unsafe {
-			mapper
-				.map_to(page, frame, flags, &mut frame_allocator)
-				.expect("mapping failed")
-				.flush();
-		}
 	}
 }

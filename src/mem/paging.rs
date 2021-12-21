@@ -132,7 +132,7 @@ pub fn get_current_page_table() -> &'static mut PageTable {
 /// The caller must insure:
 /// * The page table is a level 4 table
 /// * The entire physical memory is mapped in this page table at [PHYSICAL_MAPPING_OFFSET].
-unsafe fn get_offset_page_table(page_table: &mut PageTable) -> OffsetPageTable {
+pub unsafe fn get_offset_page_table(page_table: &mut PageTable) -> OffsetPageTable {
 	let offset = VirtAddr::new(PHYSICAL_MAPPING_OFFSET);
 	unsafe { OffsetPageTable::new(page_table, offset) }
 }

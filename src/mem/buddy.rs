@@ -12,7 +12,7 @@ use paging::phys_to_virt;
 use x86_64::{
 	structures::paging::{
 		page::{Size1GiB, Size2MiB, Size4KiB},
-		FrameAllocator, FrameDeallocator, PageSize, PhysFrame,
+		FrameAllocator, FrameDeallocator, PageSize, PhysFrame, Translate,
 	},
 	PhysAddr, VirtAddr,
 };
@@ -59,8 +59,28 @@ const FRAME_SIZE: usize = 4096;
 // +---+---+---+---+---+---+---+---+
 
 fn usable_frames(memory_regions: &'static MemoryRegions) -> impl Iterator<Item = PhysFrame> {
+	// The bootloader incorrectly marks the region used for the static/code as usable instead of
+	// bootloader. We need to filter out this region.
+	let table = paging::get_current_page_table();
+	let offset_table;
+	unsafe {
+		offset_table = paging::get_offset_page_table(table);
+	}
+	let translation = offset_table.translate(VirtAddr::new(0xFFFF800000000000));
+
+	let phys_addr = match translation {
+		x86_64::structures::paging::mapper::TranslateResult::Mapped { frame, offset, flags } => {
+			frame.start_address().as_u64()
+		}
+		_ => {
+			unreachable!("Code segment not mapped in page table! (How did this happen?)")
+		}
+	};
+
 	// get usable regions from memory map
-	let regions = memory_regions.iter();
+	let regions = memory_regions
+		.iter()
+		.filter(move |region| phys_addr >= region.end || phys_addr < region.start);
 	let usable_regions = regions.filter(|r| r.kind == MemoryRegionKind::Usable);
 	// map each region to its address range
 	let addr_ranges = usable_regions.map(|r| r.start..r.end);
@@ -72,25 +92,16 @@ fn usable_frames(memory_regions: &'static MemoryRegions) -> impl Iterator<Item =
 
 /// Set up heap mapping, and heap allocator.
 pub fn setup(memory_regions: &'static MemoryRegions) {
-	for item in usable_frames(memory_regions) {
-		serial_println!("Frame: {:?}", item);
-	}
-
 	let iterator = usable_frames(memory_regions);
 	let mut allocator = ALLOCATOR.lock();
 	for (i, frame) in iterator.enumerate() {
-		// serial_println!("{}: {:?}", i, frame);
-		for _ in 0..10000 {
-			use x86_64::instructions::nop;
-			nop();
-		}
-
 		let phys_addr = frame.start_address();
 		let virt_addr = phys_to_virt(phys_addr);
 		// serial_println!("Virt addr: {:#x}", virt_addr);
 		let id = BuddyAllocator::get_id(LAYERS - 1, virt_addr.as_u64() as usize);
 		allocator.add_free_block(id, true)
 	}
+	serial_println!("Free RAM: {} KiB", allocator.free_space / 1024);
 }
 
 /// The connection between nodes in a doubly linked list

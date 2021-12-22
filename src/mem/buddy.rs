@@ -131,7 +131,7 @@ pub struct BuddyAllocator {
 	/// For each pair of buddys (a,b) a_free XOR b_free. [BUDDY_PAIRS] stores the number of pairs
 	/// of buddys.
 	// TODO store each value as a single bit, and not a full byte.
-	xor_free: [bool; BUDDY_PAIRS],
+	xor_free: [u64; BUDDY_PAIRS / 64],
 
 	/// linked list of free blocks for every layer.
 	linked_lists: [Node; LAYERS],
@@ -143,7 +143,7 @@ impl BuddyAllocator {
 	const fn new() -> Self {
 		let empty = Node { next: None, prev: None };
 		BuddyAllocator {
-			xor_free: [false; BUDDY_PAIRS],
+			xor_free: [0; BUDDY_PAIRS / 64],
 			linked_lists: [empty; LAYERS],
 			free_space: 0,
 		}
@@ -259,8 +259,7 @@ impl BuddyAllocator {
 	unsafe fn remove_block(&mut self, id: usize) {
 		self.free_space -= SIZES[BuddyAllocator::layer_from_id(id)];
 		if id != 0 {
-			let pair_id = BuddyAllocator::pair_id(id);
-			self.xor_free[pair_id] = !self.xor_free[pair_id];
+			self.flip_xor_free(id);
 		}
 
 		let node = BuddyAllocator::node_at_id(id);
@@ -281,6 +280,23 @@ impl BuddyAllocator {
 		}
 	}
 
+	/// Returns a tuple where the first number is the index into the xor array, and the second is
+	/// the offset within the u64 at that index.
+	fn index_to_bitmap(node_id: usize) -> (usize, usize) {
+		let index = BuddyAllocator::pair_id(node_id);
+		(index / 64, index & 63usize)
+	}
+
+	fn flip_xor_free(&mut self, node_id: usize) {
+		let index_and_offset = BuddyAllocator::index_to_bitmap(node_id);
+		self.xor_free[index_and_offset.0] = self.xor_free[index_and_offset.0] ^ (1 << index_and_offset.1);
+	}
+
+	fn check_xor_free(&self, node_id: usize) -> bool {
+		let index_and_offset = BuddyAllocator::index_to_bitmap(node_id);
+		(self.xor_free[index_and_offset.0] & (1 << index_and_offset.1)) != 0
+	}
+
 	/// Add a free block of a certain id into the proper linked list. It will push it to the front
 	/// of the list, and update the [BuddyAllocator::xor_free] array. If ```with_merge``` is true,
 	/// it will attempt to merge it with its buddy, and if it can, recursively call itself on their
@@ -288,7 +304,7 @@ impl BuddyAllocator {
 	fn add_free_block(&mut self, id: usize, with_merge: bool) {
 		// serial_println!("Adding block {}", id);
 		// Check if it's buddy is free
-		if with_merge && id != 0 && self.xor_free[BuddyAllocator::pair_id(id)] {
+		if with_merge && id != 0 && self.check_xor_free(id) {
 			let buddy_id = BuddyAllocator::get_buddy_id(id);
 			// Buddy is free, can merge
 			unsafe {
@@ -300,8 +316,7 @@ impl BuddyAllocator {
 		} else {
 			// Buddy isn't free
 			if id != 0 {
-				let pair_id = BuddyAllocator::pair_id(id);
-				self.xor_free[pair_id] = !self.xor_free[pair_id];
+				self.flip_xor_free(id);
 			}
 
 			let layer = BuddyAllocator::layer_from_id(id);

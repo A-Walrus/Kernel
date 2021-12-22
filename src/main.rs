@@ -21,16 +21,5 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	heap::setup();
 	serial_println!("Setup complete!");
 
-	let x = Box::new(5);
-	serial_println!("Made box");
-	serial_println!("{:?}", x.as_ref() as *const _);
-	let mut vec = Vec::new();
-	serial_println!("Made vec");
-	for i in 0..512 {
-		serial_println!("{}", i);
-		vec.push(i);
-	}
-	serial_println!("{:?}", x);
-	serial_println!("{:?}", vec.as_slice());
 	loop {}
 }

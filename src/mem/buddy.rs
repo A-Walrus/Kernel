@@ -101,7 +101,7 @@ pub fn setup(memory_regions: &'static MemoryRegions) {
 		let id = BuddyAllocator::get_id(LAYERS - 1, virt_addr.as_u64() as usize);
 		allocator.add_free_block(id, true)
 	}
-	serial_println!("Free RAM: {} KiB", allocator.free_space / 1024);
+	serial_println!("Free RAM: {} MiB", allocator.free_space / 0x100000);
 }
 
 /// The connection between nodes in a doubly linked list

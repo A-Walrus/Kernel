@@ -15,7 +15,7 @@ use x86_64::{
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
 const HEAP_START: usize = 0xFFFFD00000000000;
-const HEAP_SIZE: usize = 0x200000; // ;2MiB
+const HEAP_SIZE: usize = 0x1000000; // 16 MiB
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {

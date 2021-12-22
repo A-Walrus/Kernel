@@ -26,7 +26,7 @@ linked_list_allocator = "*"
 # config for bootloader
 [package.metadata.bootloader]
 map-physical-memory = true
-kernel-stack-size = 0x1000000 # 16 MiB of stack (overkill)
+kernel-stack-size = 0x2000 # 8 KiB of stack
 kernel-stack-address 	= "0xFFFF900000000000"
 framebuffer-address 	= "0xFFFFA00000000000"
 boot-info-address 	= "0xFFFFB00000000000"

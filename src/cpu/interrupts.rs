@@ -78,6 +78,8 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 	serial_println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
 }
 
+/// Interrupt handler for page faults. Currenty it **does not** solve the page fault (by swapping
+/// pages, etc...), rather just prints some information about the fault.
 extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode) {
 	use x86_64::registers::control::Cr2;
 

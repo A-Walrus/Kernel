@@ -44,7 +44,7 @@ pub fn map(range: PageRangeInclusive, table: &mut PageTable) {
 	}
 }
 
-/// set up paging. Clean up the page table created by the bootloader.
+/// Set up paging. Clean up the page table created by the bootloader.
 pub fn setup() {
 	let table = get_current_page_table();
 
@@ -53,12 +53,16 @@ pub fn setup() {
 	}
 }
 
+/// Wipes the lower half of a page table. Returns all physical frames that were mapped to in that
+/// region to the [buddy allocator](buddy::BuddyAllocator), so that they can be allocated again.
 unsafe fn wipe_lower_half(table: &mut PageTable) {
 	for entry in table.iter_mut().take(256).filter(|entry| !entry.is_unused()) {
 		wipe_recursive(entry, 4);
 	}
 }
 
+/// Recursively wipes the page table from a given entry. Returns all physical frames that were mapped to in that
+/// region to the [buddy allocator](buddy::BuddyAllocator), so that they can be allocated again.
 unsafe fn wipe_recursive(entry: &mut PageTableEntry, depth: usize) {
 	let sub_table = get_sub_table_mut(entry);
 	if depth > 1 {

@@ -48,6 +48,7 @@ const SIZES: [usize; LAYERS] = {
 /// The number of pairs of buddys (2 <sup> [LAYERS] - 1 </sup> - 1).
 const BUDDY_PAIRS: usize = (1 << (LAYERS - 1)) - 1;
 
+/// Size of a physical frame (4 KiB);
 const FRAME_SIZE: usize = 4096;
 
 // Block IDs
@@ -61,9 +62,15 @@ const FRAME_SIZE: usize = 4096;
 // | 7 | 8 | 9 | A | B | C | D | E | Layer 3
 // +---+---+---+---+---+---+---+---+
 
+/// Returns an iterator over 4KiB frames that are usable. Gets this information from the memory
+/// regions provided by the bootloader (and ignores the region that the bootloader incorrectly
+/// marks as usable).
+// TODO switch to 4KiB/2MiB/1GiB frames, that would probably be more efficient.
 fn usable_frames(memory_regions: &'static MemoryRegions) -> impl Iterator<Item = PhysFrame> {
 	// The bootloader incorrectly marks the region used for the static/code as usable instead of
 	// bootloader. We need to filter out this region.
+	// TODO instad of filtering out entire region, filter out just the part of it that is
+	// being used (this will save around 100 KiB).
 	let table = paging::get_current_page_table();
 	let offset_table;
 	unsafe {
@@ -125,16 +132,17 @@ struct Node {
 /// This is only sound for a single threaded kernel!
 unsafe impl Send for Node {}
 
-/// Struct representing the global allocator. It implements [GlobalAlloc] and is
-/// set as the [global_allocator].
+/// Struct representing the buddy allocator.  
 pub struct BuddyAllocator {
 	/// For each pair of buddys (a,b) a_free XOR b_free. [BUDDY_PAIRS] stores the number of pairs
 	/// of buddys.
-	// TODO store each value as a single bit, and not a full byte.
 	xor_free: [u64; (BUDDY_PAIRS + 63) / 64],
 
 	/// linked list of free blocks for every layer.
 	linked_lists: [Node; LAYERS],
+
+	/// amount of free space available (in bytes). This information is not necessary for the actual
+	/// allocation, but it's something that's nice to know.
 	free_space: usize,
 }
 

@@ -11,12 +11,17 @@ use x86_64::{
 		Size4KiB,
 	},
 };
+
+/// This is the global allocator. It is automatically used by things like box and vec.
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
+/// Starting virtual address of the kernel heap.
 const HEAP_START: usize = 0xFFFFD00000000000;
+/// Size of the heap (in bytes).
 const HEAP_SIZE: usize = 0x1000000; // 16 MiB
 
+/// Error handler automatically called by rust on allocation failiures.
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 	panic!("allocation error: {:?}", layout)

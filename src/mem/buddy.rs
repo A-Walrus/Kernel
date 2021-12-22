@@ -18,7 +18,7 @@ use x86_64::{
 };
 
 /// The log of the size of the heap (the size of the heap must be a power of 2)
-const LOG_HEAP_SIZE: usize = 35; // 32 GiB max ram size
+const LOG_HEAP_SIZE: usize = 30; // 1 GiB. Any extra ram over this will not be used.
 /// The actual size of the heap (2 <sup> [LOG_HEAP_SIZE] </sup>)
 const HEAP_SIZE: usize = 1 << LOG_HEAP_SIZE;
 
@@ -44,6 +44,9 @@ const SIZES: [usize; LAYERS] = {
 	}
 	layers
 };
+
+/// The number of pairs of buddys (2 <sup> [LAYERS] - 1 </sup> - 1).
+const BUDDY_PAIRS: usize = (1 << (LAYERS - 1)) - 1;
 
 const FRAME_SIZE: usize = 4096;
 
@@ -122,16 +125,13 @@ struct Node {
 /// This is only sound for a single threaded kernel!
 unsafe impl Send for Node {}
 
-/// The number of pairs of buddys (2 <sup> [LAYERS] </sup> - 1).
-const BUDDY_PAIRS: usize = (1 << LAYERS) - 1;
-
 /// Struct representing the global allocator. It implements [GlobalAlloc] and is
 /// set as the [global_allocator].
 pub struct BuddyAllocator {
 	/// For each pair of buddys (a,b) a_free XOR b_free. [BUDDY_PAIRS] stores the number of pairs
 	/// of buddys.
 	// TODO store each value as a single bit, and not a full byte.
-	xor_free: [u64; BUDDY_PAIRS / 64],
+	xor_free: [u64; (BUDDY_PAIRS + 63) / 64],
 
 	/// linked list of free blocks for every layer.
 	linked_lists: [Node; LAYERS],
@@ -143,7 +143,7 @@ impl BuddyAllocator {
 	const fn new() -> Self {
 		let empty = Node { next: None, prev: None };
 		BuddyAllocator {
-			xor_free: [0; BUDDY_PAIRS / 64],
+			xor_free: [0; (BUDDY_PAIRS + 63) / 64],
 			linked_lists: [empty; LAYERS],
 			free_space: 0,
 		}
@@ -302,6 +302,10 @@ impl BuddyAllocator {
 	/// it will attempt to merge it with its buddy, and if it can, recursively call itself on their
 	/// combined parent block.
 	fn add_free_block(&mut self, id: usize, with_merge: bool) {
+		if id >= (1 << LAYERS) - 1 {
+			// node is outside of the ram that the buddy allocator is managing
+			return;
+		}
 		// serial_println!("Adding block {}", id);
 		// Check if it's buddy is free
 		if with_merge && id != 0 && self.check_xor_free(id) {

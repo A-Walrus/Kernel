@@ -140,7 +140,7 @@ impl<'a> Screen<'a> {
 
 	/// Create a new screen.
 	pub fn new(front: Buffer<'a>, info: FrameBufferInfo) -> Self {
-		let mut vec = vec![Pixel::new(0, 0, 0); front.len()];
+		let vec = vec![Pixel::new(0, 0, 0); front.len()];
 		Screen { front, back: vec, info }
 	}
 
@@ -213,7 +213,6 @@ impl<'a> Terminal<'a> {
 
 	/// write a string to the terimnal.
 	pub fn write(&mut self, data: &str) {
-		serial_println!("started printing");
 		for character in data.chars() {
 			if character.is_ascii_control() {
 				match character {
@@ -231,9 +230,7 @@ impl<'a> Terminal<'a> {
 				});
 			}
 		}
-		serial_println!("finished printing");
 		self.flush();
-		serial_println!("flushed");
 	}
 
 	/// Move cursor to beginning of line.

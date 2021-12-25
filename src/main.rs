@@ -15,19 +15,18 @@ entry_point!(kernel_main);
 
 /// Entry point for the kernel. Returns [!] because it is never supposed to exit.
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
-	gdt::setup();
-	interrupts::setup();
-	paging::setup();
-	buddy::setup(&boot_info.memory_regions);
-	heap::setup();
-	serial_println!("Setup complete!");
-
 	if let Some(framebuffer) = boot_info.framebuffer.as_mut() {
-		let mut screen = buffer::Screen::new_from_framebuffer(framebuffer);
+		gdt::setup();
+		interrupts::setup();
+		paging::setup();
+		buddy::setup(&boot_info.memory_regions);
+		heap::setup(framebuffer.buffer().len());
+		serial_println!("Setup complete!");
+
+		let screen = buffer::Screen::new_from_framebuffer(framebuffer);
 
 		let mut terminal = buffer::Terminal::new(screen);
 		terminal.write("Hello World");
-		terminal.redraw();
 	}
 	loop {}
 }

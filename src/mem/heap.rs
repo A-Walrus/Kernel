@@ -18,8 +18,6 @@ static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
 /// Starting virtual address of the kernel heap.
 const HEAP_START: usize = 0xFFFFD00000000000;
-/// Size of the heap (in bytes).
-const HEAP_SIZE: usize = 0x1000000; // 16 MiB
 
 /// Error handler automatically called by rust on allocation failiures.
 #[alloc_error_handler]
@@ -28,15 +26,16 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 }
 
 /// Initialize linked list allocator. Enables the usage of the heap by the kernel.
-pub fn setup() {
+pub fn setup(frambuffer_size: usize) {
+	let heap_size = frambuffer_size + 400000; // The size of the framebuffer + 4 MiB
 	let range = PageRangeInclusive::<Size4KiB> {
 		start: Page::containing_address(VirtAddr::new(HEAP_START as u64)),
-		end: Page::containing_address(VirtAddr::new((HEAP_START + HEAP_SIZE - 1) as u64)),
+		end: Page::containing_address(VirtAddr::new((HEAP_START + heap_size - 1) as u64)),
 	};
 	serial_println!("About to map");
 	paging::map_in_current(range);
 	serial_println!("Just mapped, about to initialize");
 	unsafe {
-		ALLOCATOR.lock().init(HEAP_START, HEAP_SIZE);
+		ALLOCATOR.lock().init(HEAP_START, heap_size);
 	}
 }

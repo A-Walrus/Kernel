@@ -1,18 +1,9 @@
-/// Size of the screen in bytes.
-pub const SCREEN_SIZE: usize = 480256;
-
 use super::{font::FONT, mask_table::MASK_TABLE};
 use crate::serial_println;
-use bootloader::boot_info::FrameBufferInfo;
-use core::ops;
+use bootloader::boot_info::{FrameBuffer, FrameBufferInfo};
+use core::{ops, slice};
 
-/// Cast reference array of bytes to a reference to array of [Pixel]s thats 1/4 as long.
-#[macro_export]
-macro_rules! as_pixels {
-	($buf:expr) => {
-		unsafe { &mut *(($buf as *mut [u8]) as *mut [Pixel; SCREEN_SIZE]) }
-	};
-}
+use alloc::{boxed::Box, vec::Vec};
 
 /// Pixel as represented in a framebuffer. Colors in a pixel are ordered BGR, with pixels being
 /// aligned to 4 bytes.
@@ -129,25 +120,39 @@ pub struct Screen<'a> {
 	/// The front buffer, visible buffer.
 	front: Buffer<'a>,
 	/// The back buffer, that is directly written to.
-	pub back: Buffer<'a>,
+	pub back: Vec<Pixel>,
 	/// Some information about the screen: (resolution...).
 	info: FrameBufferInfo,
 }
 
 impl<'a> Screen<'a> {
-	/// Create a enw screen.
-	pub fn new(front: Buffer<'a>, back: Buffer<'a>, info: FrameBufferInfo) -> Self {
-		Screen { front, back, info }
+	/// New screen from bootloader [FrameBuffer].
+	pub fn new_from_framebuffer(framebuffer: &mut FrameBuffer) -> Self {
+		let info = framebuffer.info();
+		let buffer = framebuffer.buffer_mut();
+		let front: &mut [Pixel];
+		unsafe {
+			front = slice::from_raw_parts_mut(buffer.as_mut_ptr() as *mut Pixel, buffer.len() / 4);
+		}
+
+		Screen::new(front, info)
+	}
+
+	/// Create a new screen.
+	pub fn new(front: Buffer<'a>, info: FrameBufferInfo) -> Self {
+		let mut vec = vec![Pixel::new(0, 0, 0); front.len()];
+		Screen { front, back: vec, info }
 	}
 
 	/// Draw a pixel onto the [Screen::back] buffer
 	pub fn put_pixel(&mut self, color: Pixel, pos: PixelPos) {
-		self.back[self.pos_to_index(&pos)] = color;
+		let index = self.pos_to_index(&pos);
+		self.back[index] = color;
 	}
 
 	/// Flush back buffer onto front buffer. This is done using a memcpy.
 	pub fn flush(&mut self) {
-		self.front.copy_from_slice(self.back);
+		self.front.copy_from_slice(&self.back);
 	}
 
 	/// Convert 2D [PixelPos] into 1D index into [Buffer]. This is calculated using
@@ -196,7 +201,7 @@ impl<'a> Terminal<'a> {
 	/// The width of a single character in pixels.
 	const CHAR_WIDTH: usize = 8;
 
-	/// Create a new [Terminal] from a [Screen]. This takes ownership of the string, as the
+	/// Create a new [Terminal] from a [Screen]. This takes ownership of the screen, as the
 	/// terminal is now the one responsible for it.
 	pub fn new(screen: Screen<'a>) -> Self {
 		Self {

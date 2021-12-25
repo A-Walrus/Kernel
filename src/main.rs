@@ -6,6 +6,7 @@ use alloc::{boxed::Box, vec, vec::Vec};
 use bootloader::{entry_point, BootInfo};
 use kernel::{
 	cpu::{gdt, interrupts},
+	io::buffer,
 	mem::{buddy, heap, paging},
 	serial_println,
 };
@@ -21,5 +22,12 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	heap::setup();
 	serial_println!("Setup complete!");
 
+	if let Some(framebuffer) = boot_info.framebuffer.as_mut() {
+		let mut screen = buffer::Screen::new_from_framebuffer(framebuffer);
+
+		let mut terminal = buffer::Terminal::new(screen);
+		terminal.write("Hello World");
+		terminal.redraw();
+	}
 	loop {}
 }

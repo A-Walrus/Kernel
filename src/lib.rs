@@ -13,6 +13,9 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+#[macro_use]
+extern crate alloc;
+
 /// Dealing with cpu related structures and registers: IDT, GDT, TLB...
 pub mod cpu;
 

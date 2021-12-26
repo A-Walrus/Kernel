@@ -1,17 +1,15 @@
-/// Size of the screen in bytes.
-pub const SCREEN_SIZE: usize = 480256;
-
-use super::{font::FONT, mask_table::MASK_TABLE};
+use super::font::FONT;
 use crate::serial_println;
-use bootloader::boot_info::FrameBufferInfo;
-use core::ops;
+use bootloader::boot_info::{FrameBuffer, FrameBufferInfo};
+use core::{ops, slice};
 
-/// Cast reference array of bytes to a reference to array of [Pixel]s thats 1/4 as long.
-#[macro_export]
-macro_rules! as_pixels {
-	($buf:expr) => {
-		unsafe { &mut *(($buf as *mut [u8]) as *mut [Pixel; SCREEN_SIZE]) }
-	};
+use alloc::{boxed::Box, vec::Vec};
+
+/// Calculate the length of the framebuffer according to [FrameBufferInfo]. This value may be
+/// different from the [FrameBufferInfo::byte_len]
+pub fn calc_real_length(framebuffer: &FrameBuffer) -> usize {
+	let info = framebuffer.info();
+	info.bytes_per_pixel * info.stride * info.vertical_resolution
 }
 
 /// Pixel as represented in a framebuffer. Colors in a pixel are ordered BGR, with pixels being
@@ -100,16 +98,6 @@ impl<'a, 'b> ops::Div<usize> for &'a Vector {
 
 /// Type alias for a [Vector] when used to represent position of a pixel.
 pub type PixelPos = Vector;
-/// Type alias for a [Vector] when used to represent position of a character.
-pub type CharPos = Vector;
-
-impl CharPos {
-	/// Convert to [PixelPos] of the top left corner of the character. This is dependant on
-	/// [Terminal::CHAR_WIDTH], [Terminal::CHAR_HEIGHT], and the offset, if there is any.
-	fn to_pixel(&self) -> PixelPos {
-		self * &Vector::new(Terminal::CHAR_WIDTH, Terminal::CHAR_HEIGHT)
-	}
-}
 
 /// Type alias for a reference to a framebuffer: an array of [Pixel]s.
 type Buffer<'a> = &'a mut [Pixel];
@@ -124,30 +112,44 @@ impl Style {}
 /// A screen has two buffers, front, and back, to be used for double buffering.
 /// The front buffer is the one that is mapped to the screen (or a region of the screen), and the
 /// back buffer is the one that is written into. The back buffer can be "flushed" onto the front
-/// buffer with the [Terminal::flush] method.
+/// buffer with the [Screen::flush] method.
 pub struct Screen<'a> {
 	/// The front buffer, visible buffer.
 	front: Buffer<'a>,
 	/// The back buffer, that is directly written to.
-	pub back: Buffer<'a>,
+	pub back: Vec<Pixel>,
 	/// Some information about the screen: (resolution...).
 	info: FrameBufferInfo,
 }
 
 impl<'a> Screen<'a> {
-	/// Create a enw screen.
-	pub fn new(front: Buffer<'a>, back: Buffer<'a>, info: FrameBufferInfo) -> Self {
-		Screen { front, back, info }
+	/// New screen from bootloader [FrameBuffer].
+	pub fn new_from_framebuffer(framebuffer: &mut FrameBuffer) -> Self {
+		let info = framebuffer.info();
+		let buffer = framebuffer.buffer_mut();
+		let front: &mut [Pixel];
+		unsafe {
+			front = slice::from_raw_parts_mut(buffer.as_mut_ptr() as *mut Pixel, calc_real_length(framebuffer) / 4);
+		}
+
+		Screen::new(front, info)
+	}
+
+	/// Create a new screen.
+	pub fn new(front: Buffer<'a>, info: FrameBufferInfo) -> Self {
+		let vec = vec![Pixel::new(0, 0, 0); front.len()];
+		Screen { front, back: vec, info }
 	}
 
 	/// Draw a pixel onto the [Screen::back] buffer
-	pub fn put_pixel(&mut self, color: Pixel, pos: PixelPos) {
-		self.back[self.pos_to_index(&pos)] = color;
+	pub fn put_pixel(&mut self, color: Pixel, pos: &PixelPos) {
+		let index = self.pos_to_index(pos);
+		self.back[index] = color;
 	}
 
 	/// Flush back buffer onto front buffer. This is done using a memcpy.
 	pub fn flush(&mut self) {
-		self.front.copy_from_slice(self.back);
+		self.front.copy_from_slice(&self.back);
 	}
 
 	/// Convert 2D [PixelPos] into 1D index into [Buffer]. This is calculated using
@@ -158,12 +160,7 @@ impl<'a> Screen<'a> {
 	}
 }
 
-/// Width of terminal in characters.
-const WIDTH: usize = 80;
-/// Height of terminal in characters.
-const HEIGHT: usize = 25;
-
-/// A utf-8 character and it's style. The terminal is built as a grid of these.
+/// A utf-8 character and it's style. The [Terminal] is built as a grid of these.
 #[derive(Copy, Clone, Debug)]
 struct Char {
 	character: char,
@@ -185,9 +182,15 @@ pub struct Terminal<'a> {
 	/// The screen that this terminal controls.
 	screen: Screen<'a>,
 	/// The current position of the cursor.
-	cursor_pos: CharPos,
+	cursor_pos: usize,
 	/// Grid of characters with their styles, representing what's currently on screen.
-	chars: [[Char; WIDTH]; HEIGHT],
+	chars: Vec<Char>,
+	/// Width of screen in characters.
+	width: usize,
+	/// Height of screen in characters.
+	height: usize,
+	/// Pixels of empty row for efficient clearing.
+	empty: Vec<Pixel>,
 }
 
 impl<'a> Terminal<'a> {
@@ -196,19 +199,28 @@ impl<'a> Terminal<'a> {
 	/// The width of a single character in pixels.
 	const CHAR_WIDTH: usize = 8;
 
-	/// Create a new [Terminal] from a [Screen]. This takes ownership of the string, as the
+	/// Create a new [Terminal] from a [Screen]. This takes ownership of the screen, as the
 	/// terminal is now the one responsible for it.
 	pub fn new(screen: Screen<'a>) -> Self {
+		let width = screen.info.horizontal_resolution / Terminal::CHAR_WIDTH;
+		let height = screen.info.vertical_resolution / Terminal::CHAR_HEIGHT;
 		Self {
 			screen,
-			cursor_pos: Vector::new(0, 0),
-			chars: [[Char::new(' '); WIDTH]; HEIGHT],
+			width,
+			height,
+			cursor_pos: 0,
+			chars: vec![Char::new(' '); width * height],
+			empty: vec![Pixel::new(0, 0, 0); width * Terminal::CHAR_HEIGHT * Terminal::CHAR_WIDTH],
 		}
+	}
+
+	fn pixels_per_char_row(&self) -> usize {
+		self.width * Terminal::CHAR_HEIGHT * Terminal::CHAR_WIDTH
 	}
 
 	/// write a string to the terimnal.
 	pub fn write(&mut self, data: &str) {
-		serial_println!("started printing");
+		let start_line = self.cursor_pos / self.width;
 		for character in data.chars() {
 			if character.is_ascii_control() {
 				match character {
@@ -226,109 +238,96 @@ impl<'a> Terminal<'a> {
 				});
 			}
 		}
-		serial_println!("finished printing");
-		self.flush();
-		serial_println!("flushed");
+		let end_line = self.cursor_pos / self.width;
+		let pixels_per_char_row = self.pixels_per_char_row();
+		let start = start_line * pixels_per_char_row;
+		let end = end_line * pixels_per_char_row;
+		self.screen.front[start..end].copy_from_slice(&self.screen.back[start..end]);
 	}
 
 	/// Move cursor to beginning of line.
 	fn carriage_return(&mut self) {
-		self.cursor_pos.x = 0;
+		self.cursor_pos = self.cursor_pos % self.width;
 	}
 
 	const TAB_SIZE: usize = 8;
 	/// Tab horizontally: move cursor forword to nearest multiple of [Terminal::TAB_SIZE].
-	fn horizontal_tab(&mut self) {
-		self.move_cursor(Terminal::TAB_SIZE - (self.cursor_pos.x % Terminal::TAB_SIZE));
-	}
-
-	/// Get a mutable reference to the character at a certain position.
-	fn get_char(&mut self, pos: CharPos) -> &mut Char {
-		&mut self.chars[pos.y][pos.x]
-	}
+	fn horizontal_tab(&mut self) {}
 
 	/// Write a single [Char] onto the screen, at [Terminal::cursor_pos].
 	fn write_char(&mut self, character: Char) {
 		self.draw_char(character, self.cursor_pos);
-
-		let current = self.get_char(self.cursor_pos);
-		*current = character;
+		self.chars[self.cursor_pos] = character;
 		self.move_cursor(1);
-	}
-
-	/// Move the cursor a certain amount forward. Wraps to next line if you reach the end.
-	fn move_cursor(&mut self, dist: usize) {
-		self.cursor_pos.x = (self.cursor_pos.x + dist) % WIDTH;
-		let new_lines = (self.cursor_pos.x + dist) / WIDTH;
-		for _ in 0..new_lines {
-			self.new_line();
-		}
 	}
 
 	/// Add a new line.
 	/// * At bottom of screen: Move entire screen up with [Terminal::line_up].
 	/// * Otherwise: Move cusor to start of next line.
 	fn new_line(&mut self) {
-		self.cursor_pos.x = 0;
-		if self.cursor_pos.y < HEIGHT - 1 {
-			self.cursor_pos.y += 1;
+		self.cursor_pos -= self.cursor_pos % self.width;
+		if self.cursor_pos / self.width < self.height - 1 {
+			self.cursor_pos += self.width;
 		} else {
 			self.line_up()
 		}
 	}
 
-	/// Move entire screen up a line. This involves a memcpy of the characters array, and redrawing
-	/// the entire screen.
+	/// Move the cursor a certain amount forward. Wraps to next line if you reach the end.
+	fn move_cursor(&mut self, dist: usize) {
+		let old_x = self.cursor_pos % self.width;
+		let new_x = (old_x + dist) % self.width;
+		self.cursor_pos = self.cursor_pos - old_x + new_x;
+
+		let new_lines = (old_x + dist) / self.width;
+		for _ in 0..new_lines {
+			self.new_line();
+		}
+	}
+
+	/// Move entire screen up a line. This involves a memcpy of the characters array
 	fn line_up(&mut self) {
-		const EMPTY_LINE: [Char; WIDTH] = [Char {
-			character: ' ',
-			style: Style {},
-		}; WIDTH];
-		self.chars.copy_within(1.., 0);
-		self.chars[HEIGHT - 1] = EMPTY_LINE;
-		self.redraw();
+		self.chars.copy_within(self.width.., 0);
+		let end = self.width * self.height;
+		self.chars[end - self.width..end].fill(Char::new(' '));
+
+		let pixels_per_char_row = self.pixels_per_char_row();
+
+		self.screen.back.copy_within(pixels_per_char_row.., 0);
+
+		let len = self.screen.back.len();
+		self.screen.back[len - pixels_per_char_row..].clone_from_slice(&self.empty);
+
+		self.screen.flush();
+	}
+
+	fn index_to_pixel(&self, index: usize) -> PixelPos {
+		let x = index % self.width;
+		let y = index / self.width;
+		PixelPos::new(x * Terminal::CHAR_WIDTH, y * Terminal::CHAR_HEIGHT)
 	}
 
 	/// Draw a character at a certain position. This writes pixels to the back buffer. In order to
-	/// see changes on screen you must [Terminal::flush].
-	fn draw_char(&mut self, character: Char, pos: CharPos) {
-		let mut pixel_pos = pos.to_pixel();
+	/// see changes on screen you must flush the screen.
+	fn draw_char(&mut self, character: Char, pos: usize) {
+		const MASK: [u8; 8] = [128, 64, 32, 16, 8, 4, 2, 1];
+		let mut pos = self.index_to_pixel(pos);
 		if character.character.is_ascii() {
 			let ascii = character.character as usize;
 			let char_bitmap = &FONT[ascii];
-			let foreground: Pixel = Pixel::new(255, 255, 255);
-			let background: Pixel = Pixel::new(0, 0, 0);
-			let foreground_row = [foreground; 8];
-			let background_row = [background; 8];
-			for y in 0..16 {
-				let index = self.screen.pos_to_index(&pixel_pos);
-				let row = &mut self.screen.back[index..index + 8];
-				row.copy_from_slice(&foreground_row);
-				unsafe {
-					let mask = &MASK_TABLE[char_bitmap[y] as usize];
-					let row_as_u64 = &mut *(row as *mut [Pixel] as *mut [u64; 4]);
-
-					for i in 0..4 {
-						row_as_u64[i] = row_as_u64[i] & mask[i];
-					}
+			for row in 0..Terminal::CHAR_HEIGHT {
+				for col in 0..Terminal::CHAR_WIDTH {
+					let color = if char_bitmap[row] & MASK[col] != 0 {
+						Pixel::new(255, 255, 255)
+					} else {
+						Pixel::new(0, 0, 0)
+					};
+					self.screen.put_pixel(color, &pos);
+					pos.x += 1;
 				}
-				pixel_pos.y += 1;
+				pos.x -= Terminal::CHAR_WIDTH;
+				pos.y += 1;
 			}
 		}
-	}
-
-	/// Redraw entire screen. Loop over every character and draw it.
-	pub fn redraw(&mut self) {
-		let chars = self.chars;
-		for (y, line) in chars.iter().enumerate() {
-			for (x, character) in line.iter().enumerate() {
-				self.draw_char(*character, Vector::new(x, y))
-			}
-		}
-	}
-
-	/// Flush the [Screen] of this terminal. Uses [Screen::flush].
-	fn flush(&mut self) {
-		self.screen.flush()
 	}
 }

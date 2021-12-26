@@ -29,7 +29,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		let screen = buffer::Screen::new_from_framebuffer(framebuffer);
 
 		let mut terminal = buffer::Terminal::new(screen);
-		terminal.write("Hello World");
+		loop {
+			terminal.write("Hello World! ");
+		}
 	}
 	loop {}
 }

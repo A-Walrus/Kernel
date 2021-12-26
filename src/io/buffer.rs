@@ -5,6 +5,13 @@ use core::{ops, slice};
 
 use alloc::{boxed::Box, vec::Vec};
 
+/// Calculate the length of the framebuffer according to [FrameBufferInfo]. This value may be
+/// different from the [FrameBufferInfo::byte_len]
+pub fn calc_real_length(framebuffer: &FrameBuffer) -> usize {
+	let info = framebuffer.info();
+	info.bytes_per_pixel * info.stride * info.vertical_resolution
+}
+
 /// Pixel as represented in a framebuffer. Colors in a pixel are ordered BGR, with pixels being
 /// aligned to 4 bytes.
 #[repr(align(4))]
@@ -132,7 +139,7 @@ impl<'a> Screen<'a> {
 		let buffer = framebuffer.buffer_mut();
 		let front: &mut [Pixel];
 		unsafe {
-			front = slice::from_raw_parts_mut(buffer.as_mut_ptr() as *mut Pixel, buffer.len() / 4);
+			front = slice::from_raw_parts_mut(buffer.as_mut_ptr() as *mut Pixel, calc_real_length(framebuffer) / 4);
 		}
 
 		Screen::new(front, info)

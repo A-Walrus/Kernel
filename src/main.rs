@@ -20,7 +20,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		interrupts::setup();
 		paging::setup();
 		buddy::setup(&boot_info.memory_regions);
-		heap::setup(framebuffer.buffer().len());
+
+		let len = buffer::calc_real_length(framebuffer);
+
+		heap::setup(len);
 		serial_println!("Setup complete!");
 
 		let screen = buffer::Screen::new_from_framebuffer(framebuffer);

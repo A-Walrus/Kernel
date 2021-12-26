@@ -32,9 +32,7 @@ pub fn setup(frambuffer_size: usize) {
 		start: Page::containing_address(VirtAddr::new(HEAP_START as u64)),
 		end: Page::containing_address(VirtAddr::new((HEAP_START + heap_size - 1) as u64)),
 	};
-	serial_println!("About to map");
 	paging::map_in_current(range);
-	serial_println!("Just mapped, about to initialize");
 	unsafe {
 		ALLOCATOR.lock().init(HEAP_START, heap_size);
 	}

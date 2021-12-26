@@ -27,7 +27,7 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 
 /// Initialize linked list allocator. Enables the usage of the heap by the kernel.
 pub fn setup(frambuffer_size: usize) {
-	let heap_size = frambuffer_size + 400000; // The size of the framebuffer + 4 MiB
+	let heap_size = (frambuffer_size + frambuffer_size / 2) + 400000; // (The size of the framebuffer * 1.5) + 4 MiB
 	let range = PageRangeInclusive::<Size4KiB> {
 		start: Page::containing_address(VirtAddr::new(HEAP_START as u64)),
 		end: Page::containing_address(VirtAddr::new((HEAP_START + heap_size - 1) as u64)),

@@ -4,6 +4,7 @@
 extern crate alloc;
 use alloc::{boxed::Box, vec, vec::Vec};
 use bootloader::{entry_point, BootInfo};
+use core::fmt::Write;
 use kernel::{
 	cpu::{gdt, interrupts},
 	io::buffer,
@@ -28,10 +29,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
 		let screen = buffer::Screen::new_from_framebuffer(framebuffer);
 
-		let mut terminal = buffer::Terminal::new(screen);
-		loop {
-			terminal.write("Hello World! ");
-		}
+		let mut term = buffer::Terminal::new(screen);
+
+		write!(term, "Free RAM {} MiB", buddy::ALLOCATOR.lock().get_free_space() >> 20).unwrap();
 	}
 	loop {}
 }

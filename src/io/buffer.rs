@@ -1,7 +1,7 @@
 use super::font::FONT;
 use crate::serial_println;
 use bootloader::boot_info::{FrameBuffer, FrameBufferInfo};
-use core::{ops, slice};
+use core::{fmt::Write, ops, slice};
 
 use alloc::{boxed::Box, vec::Vec};
 
@@ -331,5 +331,12 @@ impl<'a> Terminal<'a> {
 				pos.y += 1;
 			}
 		}
+	}
+}
+
+impl<'a> Write for Terminal<'a> {
+	fn write_str(&mut self, s: &str) -> core::fmt::Result {
+		self.write(s);
+		Ok(())
 	}
 }

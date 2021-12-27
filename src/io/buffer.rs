@@ -138,7 +138,9 @@ impl<'a> Screen<'a> {
 	/// Create a new screen.
 	pub fn new(front: Buffer<'a>, info: FrameBufferInfo) -> Self {
 		let vec = vec![Pixel::new(0, 0, 0); front.len()];
-		Screen { front, back: vec, info }
+		let mut screen = Screen { front, back: vec, info };
+		screen.flush();
+		screen
 	}
 
 	/// Draw a pixel onto the [Screen::back] buffer
@@ -241,7 +243,7 @@ impl<'a> Terminal<'a> {
 		let end_line = self.cursor_pos / self.width;
 		let pixels_per_char_row = self.pixels_per_char_row();
 		let start = start_line * pixels_per_char_row;
-		let end = end_line * pixels_per_char_row;
+		let end = (end_line + 1) * pixels_per_char_row;
 		self.screen.front[start..end].copy_from_slice(&self.screen.back[start..end]);
 	}
 

@@ -51,9 +51,18 @@ fn get_header_type(bus: u8, device: u8, func: u8) -> u8 {
 	(reg >> 16) as u8
 }
 
+fn get_class_code(bus: u8, device: u8, func: u8) -> u8 {
+	let reg = pci_config_read(bus, device, func, 2);
+	(reg >> 24) as u8
+}
+
+fn get_subclass_code(bus: u8, device: u8, func: u8) -> u8 {
+	let reg = pci_config_read(bus, device, func, 2);
+	(reg >> 16) as u8
+}
+
 fn check_device(bus: u8, device: u8) {
-	let vendor_id = get_vendor_id(bus, device, 0);
-	if vendor_id == 0xFFFF {
+	if get_vendor_id(bus, device, 0) == 0xFFFF {
 		// Device doesn't exist
 	} else {
 		// Device exists
@@ -62,7 +71,8 @@ fn check_device(bus: u8, device: u8) {
 		if header_type & 0x80 != 0 {
 			// It's a multi function device, check remaining functions
 			for func in 1..8 {
-				if get_vendor_id(bus, device, func) != 0xFFFF {
+				let vendor = get_vendor_id(bus, device, func);
+				if vendor != 0xFFFF {
 					check_function(bus, device, func)
 				}
 			}
@@ -73,4 +83,7 @@ fn check_device(bus: u8, device: u8) {
 fn check_function(bus: u8, device: u8, func: u8) {
 	let vendor_id = get_vendor_id(bus, device, func);
 	serial_println!("Vendor: {} ({:#X})", vendor_id, vendor_id);
+	let class_code = get_class_code(bus, device, func);
+	let subclass_code = get_subclass_code(bus, device, func);
+	serial_println!("Class: {:#x} {:#X}", class_code, subclass_code);
 }

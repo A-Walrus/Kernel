@@ -24,7 +24,7 @@ fn pci_config_read(bus: u8, slot: u8, func: u8, register: u8) -> u32 {
 	let lfunc = func as u32;
 	let lregister = register as u32;
 
-	let address: u32 = lbus << 16 | lslot << 11 | lfunc << 8 | (lregister & 0xFC) | 0x80000000;
+	let address: u32 = lbus << 16 | lslot << 11 | lfunc << 8 | lregister << 2 | 0x80000000;
 
 	unsafe {
 		CONFIG_ADDRESS.write(address);

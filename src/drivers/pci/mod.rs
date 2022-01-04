@@ -2,13 +2,9 @@ use x86_64::instructions::port::{Port, PortGeneric, ReadOnlyAccess, ReadWriteAcc
 
 const CONFIG_ADDRESS: PortGeneric<u32, WriteOnlyAccess> = PortGeneric::new(0xCF8);
 const CONFIG_DATA: PortGeneric<u32, ReadOnlyAccess> = PortGeneric::new(0xCFC);
+use alloc::vec::Vec;
 
 use crate::{serial_print, serial_println};
-
-/// test pci
-pub fn testing() {
-	brute_force_scan();
-}
 
 // Config address format
 // ╔════════╦════════════╦════════════╦════════════╦══════════════╦═════════════════╗
@@ -56,6 +52,15 @@ pub fn testing() {
 // ║     0xF    ║  Max latency  ║   Min Grant   ║  Interrupt PIN  ║     Interrupt Line     ║
 // ╚════════════╩═══════════════╩═══════════════╩═════════════════╩════════════════════════╝
 
+/// test pci
+pub fn testing() {
+	let res = brute_force_scan();
+	serial_println!("{:?}", res);
+	for func in res {
+		func_info(func);
+	}
+}
+
 #[derive(Debug, Copy, Clone)]
 struct Function {
 	bus: u8,
@@ -79,12 +84,14 @@ fn pci_config_read(func: Function, register: u8) -> u32 {
 	unsafe { CONFIG_DATA.read() }
 }
 
-fn brute_force_scan() {
+fn brute_force_scan() -> Vec<Function> {
+	let mut vec = Vec::new();
 	for bus in 0..=255 {
 		for device in 0..32 {
-			check_device(bus, device);
+			scan_device(bus, device, &mut vec);
 		}
 	}
+	vec
 }
 
 fn get_vendor_id(func: Function) -> u16 {
@@ -149,7 +156,7 @@ fn get_bars(func: Function) -> Bars {
 	bars
 }
 
-fn check_device(bus: u8, device: u8) {
+fn scan_device(bus: u8, device: u8, found: &mut Vec<Function>) {
 	let mut func = Function {
 		bus,
 		slot: device,
@@ -159,7 +166,7 @@ fn check_device(bus: u8, device: u8) {
 		// Device doesn't exist
 	} else {
 		// Device exists
-		check_function(func);
+		found.push(func);
 		let header_type = get_header_type_val(func);
 		if header_type & 0x80 != 0 {
 			// It's a multi function device, check remaining functions
@@ -167,14 +174,14 @@ fn check_device(bus: u8, device: u8) {
 				func.function = function;
 				let vendor = get_vendor_id(func);
 				if vendor != 0xFFFF {
-					check_function(func)
+					found.push(func);
 				}
 			}
 		}
 	}
 }
 
-fn check_function(func: Function) {
+fn func_info(func: Function) {
 	let vendor_id = get_vendor_id(func);
 	serial_println!("Vendor: {} ({:#X})", vendor_id, vendor_id);
 	let class_code = get_class_code(func);

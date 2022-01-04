@@ -56,11 +56,18 @@ pub fn testing() {
 // ║     0xF    ║  Max latency  ║   Min Grant   ║  Interrupt PIN  ║     Interrupt Line     ║
 // ╚════════════╩═══════════════╩═══════════════╩═════════════════╩════════════════════════╝
 
+#[derive(Debug, Copy, Clone)]
+struct Function {
+	bus: u8,
+	slot: u8,
+	function: u8,
+}
+
 // Read a word at a certain bus, slot, func, offset
-fn pci_config_read(bus: u8, slot: u8, func: u8, register: u8) -> u32 {
-	let lbus = bus as u32;
-	let lslot = slot as u32;
-	let lfunc = func as u32;
+fn pci_config_read(func: Function, register: u8) -> u32 {
+	let lbus = func.bus as u32;
+	let lslot = func.slot as u32;
+	let lfunc = func.function as u32;
 	let lregister = register as u32;
 
 	let address: u32 = lbus << 16 | lslot << 11 | lfunc << 8 | lregister << 2 | 0x80000000;
@@ -80,8 +87,8 @@ fn brute_force_scan() {
 	}
 }
 
-fn get_vendor_id(bus: u8, device: u8, func: u8) -> u16 {
-	let reg = pci_config_read(bus, device, func, 0);
+fn get_vendor_id(func: Function) -> u16 {
+	let reg = pci_config_read(func, 0);
 	reg as u16
 }
 
@@ -94,8 +101,8 @@ enum HeaderType {
 	Reserved = 0xff,
 }
 
-fn get_header_type_enum(bus: u8, device: u8, func: u8) -> HeaderType {
-	match get_header_type_num(bus, device, func) & 0b0111_1111 {
+fn get_header_type_enum(func: Function) -> HeaderType {
+	match get_header_type_num(func) & 0b0111_1111 {
 		0x0 => HeaderType::Regular,
 		0x1 => HeaderType::PciToPci,
 		0x2 => HeaderType::PciToCardBus,
@@ -103,18 +110,18 @@ fn get_header_type_enum(bus: u8, device: u8, func: u8) -> HeaderType {
 	}
 }
 
-fn get_header_type_num(bus: u8, device: u8, func: u8) -> u8 {
-	let reg = pci_config_read(bus, device, func, 3);
+fn get_header_type_num(func: Function) -> u8 {
+	let reg = pci_config_read(func, 3);
 	(reg >> 16) as u8
 }
 
-fn get_class_code(bus: u8, device: u8, func: u8) -> u8 {
-	let reg = pci_config_read(bus, device, func, 2);
+fn get_class_code(func: Function) -> u8 {
+	let reg = pci_config_read(func, 2);
 	(reg >> 24) as u8
 }
 
-fn get_subclass_code(bus: u8, device: u8, func: u8) -> u8 {
-	let reg = pci_config_read(bus, device, func, 2);
+fn get_subclass_code(func: Function) -> u8 {
+	let reg = pci_config_read(func, 2);
 	(reg >> 16) as u8
 }
 
@@ -123,8 +130,8 @@ struct Interrupt {
 	pin: u8,
 	line: u8,
 }
-fn get_interrupt(bus: u8, device: u8, func: u8) -> Interrupt {
-	let reg = pci_config_read(bus, device, func, 2);
+fn get_interrupt(func: Function) -> Interrupt {
+	let reg = pci_config_read(func, 2);
 	Interrupt {
 		pin: (reg >> 8) as u8,
 		line: reg as u8,
@@ -132,33 +139,39 @@ fn get_interrupt(bus: u8, device: u8, func: u8) -> Interrupt {
 }
 
 fn check_device(bus: u8, device: u8) {
-	if get_vendor_id(bus, device, 0) == 0xFFFF {
+	let mut func = Function {
+		bus,
+		slot: device,
+		function: 0,
+	};
+	if get_vendor_id(func) == 0xFFFF {
 		// Device doesn't exist
 	} else {
 		// Device exists
-		check_function(bus, device, 0);
-		let header_type = get_header_type_num(bus, device, 0);
+		check_function(func);
+		let header_type = get_header_type_num(func);
 		if header_type & 0x80 != 0 {
 			// It's a multi function device, check remaining functions
-			for func in 1..8 {
-				let vendor = get_vendor_id(bus, device, func);
+			for function in 1..8 {
+				func.function = function;
+				let vendor = get_vendor_id(func);
 				if vendor != 0xFFFF {
-					check_function(bus, device, func)
+					check_function(func)
 				}
 			}
 		}
 	}
 }
 
-fn check_function(bus: u8, device: u8, func: u8) {
-	let vendor_id = get_vendor_id(bus, device, func);
+fn check_function(func: Function) {
+	let vendor_id = get_vendor_id(func);
 	serial_println!("Vendor: {} ({:#X})", vendor_id, vendor_id);
-	let class_code = get_class_code(bus, device, func);
-	let subclass_code = get_subclass_code(bus, device, func);
+	let class_code = get_class_code(func);
+	let subclass_code = get_subclass_code(func);
 	serial_println!("Class: {:#x} {:#X}", class_code, subclass_code);
-	let header_type = get_header_type_enum(bus, device, func);
+	let header_type = get_header_type_enum(func);
 	serial_println!("Header Type: {:?}", header_type);
-	let interrupt = get_interrupt(bus, device, func);
+	let interrupt = get_interrupt(func);
 	serial_println!("Interrupt: {:?}", interrupt);
 
 	serial_println!("");

@@ -101,8 +101,8 @@ enum HeaderType {
 	Reserved = 0xff,
 }
 
-fn get_header_type_enum(func: Function) -> HeaderType {
-	match get_header_type_num(func) & 0b0111_1111 {
+fn get_header_type(func: Function) -> HeaderType {
+	match get_header_type_val(func) & 0b0111_1111 {
 		0x0 => HeaderType::Regular,
 		0x1 => HeaderType::PciToPci,
 		0x2 => HeaderType::PciToCardBus,
@@ -110,7 +110,7 @@ fn get_header_type_enum(func: Function) -> HeaderType {
 	}
 }
 
-fn get_header_type_num(func: Function) -> u8 {
+fn get_header_type_val(func: Function) -> u8 {
 	let reg = pci_config_read(func, 3);
 	(reg >> 16) as u8
 }
@@ -138,6 +138,17 @@ fn get_interrupt(func: Function) -> Interrupt {
 	}
 }
 
+type Bars = [u32; 6];
+
+// Only correct if Header Type is Regular (0x0)
+fn get_bars(func: Function) -> Bars {
+	let mut bars = [0; 6];
+	for i in 0u8..6 {
+		bars[i as usize] = pci_config_read(func, 4 + i);
+	}
+	bars
+}
+
 fn check_device(bus: u8, device: u8) {
 	let mut func = Function {
 		bus,
@@ -149,7 +160,7 @@ fn check_device(bus: u8, device: u8) {
 	} else {
 		// Device exists
 		check_function(func);
-		let header_type = get_header_type_num(func);
+		let header_type = get_header_type_val(func);
 		if header_type & 0x80 != 0 {
 			// It's a multi function device, check remaining functions
 			for function in 1..8 {
@@ -169,10 +180,12 @@ fn check_function(func: Function) {
 	let class_code = get_class_code(func);
 	let subclass_code = get_subclass_code(func);
 	serial_println!("Class: {:#x} {:#X}", class_code, subclass_code);
-	let header_type = get_header_type_enum(func);
+	let header_type = get_header_type(func);
 	serial_println!("Header Type: {:?}", header_type);
 	let interrupt = get_interrupt(func);
 	serial_println!("Interrupt: {:?}", interrupt);
+	let bars = get_bars(func);
+	serial_println!("Bars: {:?}", bars);
 
 	serial_println!("");
 }

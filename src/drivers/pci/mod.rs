@@ -145,15 +145,71 @@ fn get_interrupt(func: Function) -> Interrupt {
 	}
 }
 
-type Bars = [u32; 6];
+// Memory space BAR layout
+// ╔════════════════════════════════╦════════════════╦════════════╦════════════╗
+// ║            Bits 31-4           ║      Bit 3     ║  Bits 2-1  ║    Bit 0   ║
+// ╠════════════════════════════════╬════════════════╬════════════╬════════════╣
+// ║  16-Byte Aligned Base Address  ║  Prefetchable  ║    Type    ║  Always 0  ║
+// ╚════════════════════════════════╩════════════════╩════════════╩════════════╝
+//
+// IO space BAR layout
+// ╔═══════════════════════════════╦════════════╦════════════╗
+// ║           Bits 31-2           ║    Bit 1   ║    Bit 0   ║
+// ╠═══════════════════════════════╬════════════╬════════════╣
+// ║  4-Byte Aligned Base Address  ║  Reserved  ║  Always 1  ║
+// ╚═══════════════════════════════╩════════════╩════════════╝
+
+#[derive(Debug)]
+enum Bar {
+	MemorySpace { prefetchable: bool, base_address: u64 },
+	IOSpace { base_address: u32 },
+}
 
 // Only correct if Header Type is Regular (0x0)
-fn get_bars(func: Function) -> Bars {
-	let mut bars = [0; 6];
-	for i in 0u8..6 {
-		bars[i as usize] = pci_config_read(func, 4 + i);
+fn get_bars(func: Function) -> Vec<Bar> {
+	let mut vec = Vec::new();
+	let mut i = 0;
+	while i < 6 {
+		let bar_i = pci_config_read(func, 4 + i);
+		let bar = {
+			if bar_i % 2 == 0 {
+				// Memory space
+				let bar_type = (bar_i & 0b110) >> 1;
+				let prefetchable = bar_i & 0b1000 != 0;
+				match bar_type {
+					0 => {
+						// 32 bit
+						Bar::MemorySpace {
+							prefetchable,
+							base_address: (bar_i & 0xFFFFFFF0) as u64,
+						}
+					}
+					2 => {
+						// 64 bit
+						i += 1;
+						let start = bar_i as u64;
+						let end = pci_config_read(func, 4 + i) as u64;
+						Bar::MemorySpace {
+							prefetchable,
+							base_address: ((start & 0xFFFFFFF0) + ((end & 0xFFFFFFFF) << 32)),
+						}
+					}
+					_ => {
+						// Invalid
+						unreachable!()
+					}
+				}
+			} else {
+				// IO space
+				Bar::IOSpace {
+					base_address: bar_i & 0xFFFFFFFC,
+				}
+			}
+		};
+		vec.push(bar);
+		i += 1;
 	}
-	bars
+	vec
 }
 
 fn scan_device(bus: u8, device: u8, found: &mut Vec<Function>) {
@@ -192,7 +248,7 @@ fn func_info(func: Function) {
 	let interrupt = get_interrupt(func);
 	serial_println!("Interrupt: {:?}", interrupt);
 	let bars = get_bars(func);
-	serial_println!("Bars: {:?}", bars);
+	serial_println!("Bars [{}]: {:?}", bars.len(), bars);
 
 	serial_println!("");
 }

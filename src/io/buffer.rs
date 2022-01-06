@@ -5,6 +5,9 @@ use core::{fmt::Write, ops, slice};
 
 use alloc::{boxed::Box, vec::Vec};
 
+/// Public static terminal.
+pub static mut TERM: Option<Terminal> = None;
+
 /// Calculate the length of the framebuffer according to [FrameBufferInfo]. This value may be
 /// different from the [FrameBufferInfo::byte_len]
 pub fn calc_real_length(framebuffer: &FrameBuffer) -> usize {
@@ -339,4 +342,29 @@ impl<'a> Write for Terminal<'a> {
 		self.write(s);
 		Ok(())
 	}
+}
+
+/// Print to the screen
+#[macro_export]
+macro_rules! print {
+	($($arg:tt)*) => {
+		unsafe {
+			match &mut $crate::io::buffer::TERM {
+				Some(term) => {
+					use core::fmt::Write;
+					write!(term, $($arg)*);
+				}
+				None => {}
+			}
+		}
+	};
+}
+
+/// Prints to the host through the serial interface, appending a newline.
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($fmt:expr) => ($crate::print!(concat!($fmt, "\n")));
+    ($fmt:expr, $($arg:tt)*) => ($crate::print!(
+        concat!($fmt, "\n"), $($arg)*))
 }

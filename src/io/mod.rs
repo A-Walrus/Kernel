@@ -1,4 +1,5 @@
 /// Working with framebuffers and character buffers.
+#[macro_use]
 pub mod buffer;
 /// Array describing a bitmap font.
 pub mod font;

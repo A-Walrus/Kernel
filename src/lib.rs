@@ -20,14 +20,13 @@ extern crate alloc;
 pub mod cpu;
 
 /// Dealing with input/output: screen, keyboard, serial...
+#[macro_use]
 pub mod io;
 
 /// Dealing with memory: paging, tlb, alloc/heap...
 pub mod mem;
 
 use core::panic::PanicInfo;
-
-pub use io::serial;
 
 /// Panic handler is called automatically when a panic occurs, and prints the information to serial
 /// for debugging.

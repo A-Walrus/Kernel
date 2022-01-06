@@ -32,6 +32,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		let mut term = buffer::Terminal::new(screen);
 
 		write!(term, "Free RAM {} MiB", buddy::ALLOCATOR.lock().get_free_space() >> 20).unwrap();
+
+		unsafe {
+			buffer::TERM = Some(term);
+		}
 	}
 	loop {}
 }

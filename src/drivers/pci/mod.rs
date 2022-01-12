@@ -54,7 +54,7 @@ use crate::{serial_print, serial_println};
 
 /// test pci
 pub fn testing() {
-	let res = brute_force_scan();
+	let res = recursive_scan();
 	serial_println!("{:?}", res);
 	for func in res {
 		func_info(func);
@@ -66,6 +66,12 @@ struct Function {
 	bus: u8,
 	slot: u8,
 	function: u8,
+}
+
+impl Function {
+	fn new(bus: u8, slot: u8, function: u8) -> Self {
+		Self { bus, function, slot }
+	}
 }
 
 // Read a word at a certain bus, slot, func, offset
@@ -84,14 +90,32 @@ fn pci_config_read(func: Function, register: u8) -> u32 {
 	unsafe { CONFIG_DATA.read() }
 }
 
-fn brute_force_scan() -> Vec<Function> {
-	let mut vec = Vec::new();
-	for bus in 0..=255 {
-		for device in 0..32 {
-			scan_device(bus, device, &mut vec);
+fn recursive_scan() -> Vec<Function> {
+	let mut found = Vec::new();
+	let mut function = Function::new(0, 0, 0);
+
+	let header_type = get_header_type(function);
+	if header_type.multi_function {
+		// multi function device
+		for func in 0..8 {
+			function.function = func;
+			if get_vendor_id(function) != 0xFFFF {
+				// function exists
+				scan_bus(func, &mut found);
+			}
 		}
+	} else {
+		// single function device
+		scan_bus(0, &mut found);
 	}
-	vec
+
+	found
+}
+
+fn scan_bus(bus: u8, found: &mut Vec<Function>) {
+	for device in 0..32 {
+		scan_device(bus, device, found);
+	}
 }
 
 fn get_vendor_id(func: Function) -> u16 {
@@ -108,12 +132,22 @@ enum HeaderType {
 	Reserved = 0xff,
 }
 
-fn get_header_type(func: Function) -> HeaderType {
-	match get_header_type_val(func) & 0b0111_1111 {
-		0x0 => HeaderType::Regular,
-		0x1 => HeaderType::PciToPci,
-		0x2 => HeaderType::PciToCardBus,
-		_ => HeaderType::Reserved,
+#[derive(Debug)]
+struct HeaderTypeField {
+	header_type: HeaderType,
+	multi_function: bool,
+}
+
+fn get_header_type(func: Function) -> HeaderTypeField {
+	let val = get_header_type_val(func);
+	HeaderTypeField {
+		header_type: match val & 0b0111_1111 {
+			0x0 => HeaderType::Regular,
+			0x1 => HeaderType::PciToPci,
+			0x2 => HeaderType::PciToCardBus,
+			_ => HeaderType::Reserved,
+		},
+		multi_function: val & 0x80 != 0,
 	}
 }
 
@@ -130,6 +164,11 @@ fn get_class_code(func: Function) -> u8 {
 fn get_subclass_code(func: Function) -> u8 {
 	let reg = pci_config_read(func, 2);
 	(reg >> 16) as u8
+}
+
+fn get_secondary_bus(func: Function) -> u8 {
+	let reg = pci_config_read(func, 6);
+	(reg >> 8) as u8
 }
 
 #[derive(Debug)]
@@ -213,27 +252,32 @@ fn get_bars(func: Function) -> Vec<Bar> {
 }
 
 fn scan_device(bus: u8, device: u8, found: &mut Vec<Function>) {
-	let mut func = Function {
-		bus,
-		slot: device,
-		function: 0,
-	};
+	let mut func = Function::new(bus, device, 0);
 	if get_vendor_id(func) == 0xFFFF {
 		// Device doesn't exist
 	} else {
 		// Device exists
-		found.push(func);
-		let header_type = get_header_type_val(func);
-		if header_type & 0x80 != 0 {
+		scan_function(func, found);
+		let header_type = get_header_type(func);
+		if header_type.multi_function {
 			// It's a multi function device, check remaining functions
 			for function in 1..8 {
 				func.function = function;
 				let vendor = get_vendor_id(func);
 				if vendor != 0xFFFF {
-					found.push(func);
+					scan_function(func, found);
 				}
 			}
 		}
+	}
+}
+
+fn scan_function(func: Function, found: &mut Vec<Function>) {
+	found.push(func);
+	let class_code = get_class_code(func);
+	let subclass_code = get_subclass_code(func);
+	if class_code == 0x6 && subclass_code == 0x4 {
+		let secondary_bus = get_secondary_bus(func);
 	}
 }
 

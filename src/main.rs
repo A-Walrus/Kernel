@@ -37,7 +37,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 			buffer::TERM = Some(term);
 		}
 
-		drivers::pci::testing();
+		// drivers::pci::testing();
+		drivers::ahci::setup();
 	}
 	loop {}
 }

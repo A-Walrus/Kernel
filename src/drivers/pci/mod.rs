@@ -52,7 +52,7 @@ use crate::serial_println;
 // ║     0xF    ║  Max latency  ║   Min Grant   ║  Interrupt PIN  ║     Interrupt Line     ║
 // ╚════════════╩═══════════════╩═══════════════╩═════════════════╩════════════════════════╝
 
-/// test pci
+/// Test pci
 pub fn testing() {
 	let res = recursive_scan();
 	serial_println!("{:?}", res);
@@ -61,11 +61,16 @@ pub fn testing() {
 	}
 }
 
+/// Struct representing a PCI function. This is like the PCI "address" of a function (thing that does
+/// something). Some examples are network cards, storage cards, bus bridges, and so on.
 #[derive(Debug, Copy, Clone)]
-struct Function {
-	bus: u8,
-	slot: u8,
-	function: u8,
+pub struct Function {
+	/// The bus that this function is on (0-256)
+	pub bus: u8,
+	/// The slot/device that this function is on (0-32)
+	pub slot: u8,
+	/// The function that this is on the device (0-8)
+	pub function: u8,
 }
 
 impl Function {
@@ -90,7 +95,9 @@ fn pci_config_read(func: Function, register: u8) -> u32 {
 	unsafe { CONFIG_DATA.read() }
 }
 
-fn recursive_scan() -> Vec<Function> {
+/// Recursively scan PCI buses and find all available functions. This starts at the ['function']
+/// (0,0,0) and through buses and bridges finds the rest of the functions recursively.
+pub fn recursive_scan() -> Vec<Function> {
 	let mut found = Vec::new();
 	let mut function = Function::new(0, 0, 0);
 
@@ -156,12 +163,16 @@ fn get_header_type_val(func: Function) -> u8 {
 	(reg >> 16) as u8
 }
 
-fn get_class_code(func: Function) -> u8 {
+/// Get the class code/id of the function. Each class code represents a different type of device
+/// storage, network, display...
+pub fn get_class_code(func: Function) -> u8 {
 	let reg = pci_config_read(func, 2);
 	(reg >> 24) as u8
 }
 
-fn get_subclass_code(func: Function) -> u8 {
+/// Get the subclass code/id of the function. Each subclass code represents a more specific
+/// type for the class according to ['get_class_code'].
+pub fn get_subclass_code(func: Function) -> u8 {
 	let reg = pci_config_read(func, 2);
 	(reg >> 16) as u8
 }

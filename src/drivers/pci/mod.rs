@@ -1,4 +1,7 @@
-use x86_64::instructions::port::{PortGeneric, ReadWriteAccess, WriteOnlyAccess};
+use x86_64::{
+	instructions::port::{PortGeneric, ReadWriteAccess, WriteOnlyAccess},
+	PhysAddr,
+};
 
 const CONFIG_ADDRESS: PortGeneric<u32, WriteOnlyAccess> = PortGeneric::new(0xCF8);
 const CONFIG_DATA: PortGeneric<u32, ReadWriteAccess> = PortGeneric::new(0xCFC);
@@ -210,14 +213,27 @@ fn get_interrupt(func: Function) -> Interrupt {
 // ║  4-Byte Aligned Base Address  ║  Reserved  ║  Always 1  ║
 // ╚═══════════════════════════════╩════════════╩════════════╝
 
-#[derive(Debug)]
-enum Bar {
-	MemorySpace { prefetchable: bool, base_address: u64 },
-	IOSpace { base_address: u32 },
+/// Enum representing a Base Address Register. Can either be in memory space or io space.
+#[derive(Debug, Copy, Clone)]
+pub enum Bar {
+	/// Base Address register in memory space. Memory spase BARS are:
+	/// - Located in physical ram.
+	/// - Aligned to 16 Bytes
+	MemorySpace {
+		/// Whether reading this BAR has any side effects
+		prefetchable: bool,
+		/// The base address, this address is a physical address in ram
+		base_address: PhysAddr,
+	},
+	/// Base Address register in I/O space. Its address is not within the physical ram.
+	IOSpace {
+		/// The I/O base address. It is 4 Byte aligned.
+		base_address: PhysAddr,
+	},
 }
 
-// Only correct if Header Type is Regular (0x0)
-fn get_bars(func: Function) -> Vec<Bar> {
+/// Get vector of BARS of this function. Only valid if Header Type is Regular (0x0)!
+pub fn get_bars(func: Function) -> Vec<Bar> {
 	let mut vec = Vec::new();
 	let mut i = 0;
 	while i < 6 {
@@ -232,7 +248,7 @@ fn get_bars(func: Function) -> Vec<Bar> {
 						// 32 bit
 						Bar::MemorySpace {
 							prefetchable,
-							base_address: (bar_i & 0xFFFFFFF0) as u64,
+							base_address: PhysAddr::new((bar_i & 0xFFFFFFF0) as u64),
 						}
 					}
 					2 => {
@@ -242,7 +258,7 @@ fn get_bars(func: Function) -> Vec<Bar> {
 						let end = pci_config_read(func, 4 + i) as u64;
 						Bar::MemorySpace {
 							prefetchable,
-							base_address: ((start & 0xFFFFFFF0) + ((end & 0xFFFFFFFF) << 32)),
+							base_address: PhysAddr::new((start & 0xFFFFFFF0) + ((end & 0xFFFFFFFF) << 32)),
 						}
 					}
 					_ => {
@@ -253,7 +269,7 @@ fn get_bars(func: Function) -> Vec<Bar> {
 			} else {
 				// IO space
 				Bar::IOSpace {
-					base_address: bar_i & 0xFFFFFFFC,
+					base_address: PhysAddr::new((bar_i & 0xFFFFFFFC) as u64),
 				}
 			}
 		};

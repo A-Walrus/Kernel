@@ -7,6 +7,7 @@ use bootloader::{entry_point, BootInfo};
 use core::fmt::Write;
 use kernel::{
 	cpu::{gdt, interrupts},
+	drivers,
 	io::buffer,
 	mem::{buddy, heap, paging},
 	serial_println,
@@ -36,6 +37,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		unsafe {
 			buffer::TERM = Some(term);
 		}
+
+		drivers::pci::testing();
 	}
 	loop {}
 }

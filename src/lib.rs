@@ -26,6 +26,9 @@ pub mod io;
 /// Dealing with memory: paging, tlb, alloc/heap...
 pub mod mem;
 
+/// Dealing with drivers
+pub mod drivers;
+
 use core::panic::PanicInfo;
 
 /// Panic handler is called automatically when a panic occurs, and prints the information to serial

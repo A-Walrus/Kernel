@@ -38,7 +38,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		}
 
 		// drivers::pci::testing();
-		drivers::ahci::setup(&boot_info.memory_regions);
+		drivers::ahci::setup();
 	}
 	loop {}
 }

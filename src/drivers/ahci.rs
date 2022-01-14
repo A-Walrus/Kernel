@@ -1,10 +1,77 @@
+use core::fmt::{Debug, Display};
+
 use crate::mem::paging;
 use bootloader::boot_info::MemoryRegions;
 
 use super::pci;
 
+#[repr(C)]
+struct AHCIVersion {
+	minor: [u8; 2],
+	major: [u8; 2],
+}
+
+impl Display for AHCIVersion {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		write!(
+			f,
+			"{}{}.{}{}",
+			self.major[1], self.major[0], self.minor[1], self.minor[0]
+		)
+	}
+}
+
+impl Debug for AHCIVersion {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		write!(f, "{}", self)
+	}
+}
+
+#[derive(Debug)]
+#[repr(C)]
+struct HBAPort {
+	command_list_base: u32,       // base address 1KiB aligned
+	command_list_base_upper: u32, // base address upper 32 bits
+	fis_base_address: u32,
+	fis_base_address_upper: u32,
+	interrupt_status: u32,
+	interrupt_enable: u32,
+	command_and_status: u32,
+	_reserved0: u32,
+	task_file_data: u32,
+	signature: u32,
+	sata_status: u32,
+	sata_control: u32,
+	sata_error: u32,
+	sata_active: u32,
+	command_issue: u32,
+	sata_notification: u32,
+	fis_based_switch_control: u32,
+	_reserved2: [u8; 11],
+	vendor_specific: [u32; 4],
+}
+
+#[derive(Debug)]
+#[repr(C)]
+struct HBAMemory {
+	capabilities: u32,
+	global_host_control: u32,
+	interrupt_status: u32,
+	port_implemented: u32,
+	version: AHCIVersion,
+	ccc_control: u32, // Command comletion coalescing control
+	ccc_ports: u32,   // Command comletion coalescing ports
+	enclosure_management_location: u32,
+	enclosure_management_control: u32,
+	capabilities_extended: u32,
+	bios_os_handoff: u32,
+	_reserved: [u8; 0xA0 - 0x2C],
+	vendor_specific: [u8; 0x100 - 0xA0],
+	ports: [HBAPort; 32],
+}
+
 /// Setup AHCI
-pub fn setup(regions: &MemoryRegions) {
+pub fn setup() {
 	let functions = pci::recursive_scan();
 	let res = functions
 		.iter()
@@ -17,7 +84,7 @@ pub fn setup(regions: &MemoryRegions) {
 			let address;
 			match abar {
 				pci::Bar::MemorySpace {
-					prefetchable,
+					prefetchable: _,
 					base_address,
 				} => {
 					address = base_address;
@@ -27,20 +94,11 @@ pub fn setup(regions: &MemoryRegions) {
 				}
 			}
 			let virt_addr = paging::phys_to_virt(address);
+			let hba_memory: &mut HBAMemory;
 			unsafe {
-				let mut base_ptr = virt_addr.as_u64();
-				let version_major_ones = *((base_ptr + 0x12) as *const u8);
-				let version_major_tens = *((base_ptr + 0x13) as *const u8);
-				let version_minor_ones = *((base_ptr + 0x10) as *const u8);
-				let version_minor_tens = *((base_ptr + 0x11) as *const u8);
-				serial_println!(
-					"AHCI version: {}{}.{}{}",
-					version_major_tens,
-					version_major_ones,
-					version_minor_tens,
-					version_minor_tens
-				);
+				hba_memory = &mut *(virt_addr.as_mut_ptr());
 			}
+			serial_println!("{:#?}", hba_memory);
 		}
 		None => {
 			serial_println!("No AHCI device, cannot access storage!");

@@ -9,7 +9,7 @@ use kernel::{
 	drivers,
 	io::buffer,
 	mem::{buddy, heap, paging},
-	serial_println,
+	println, serial_println,
 };
 
 entry_point!(kernel_main);
@@ -31,11 +31,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
 		let mut term = buffer::Terminal::new(screen);
 
-		write!(term, "Free RAM {} MiB", buddy::ALLOCATOR.lock().get_free_space() >> 20).unwrap();
-
 		unsafe {
 			buffer::TERM = Some(term);
 		}
+		println!("Free RAM {} MiB", buddy::ALLOCATOR.lock().get_free_space() >> 20);
 
 		// drivers::pci::testing();
 		drivers::ahci::setup();

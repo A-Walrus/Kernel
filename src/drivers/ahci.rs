@@ -99,6 +99,7 @@ pub fn setup() {
 				hba_memory = &mut *(virt_addr.as_mut_ptr());
 			}
 			serial_println!("{:#?}", hba_memory);
+			println!("{}", hba_memory.version);
 		}
 		None => {
 			serial_println!("No AHCI device, cannot access storage!");

@@ -1,6 +1,6 @@
 use core::{
 	fmt::{Debug, Display},
-	mem::size_of,
+	mem::{align_of, size_of},
 };
 
 use crate::mem::paging;
@@ -84,12 +84,16 @@ struct HBACommandHeader {
 	_reserved: [u32; 4],
 }
 
-type HBACommandList = [HBACommandHeader; 32];
+#[repr(align(1024))]
+struct HBACommandList([HBACommandHeader; 32]);
 
 const _: () = {
 	assert!(size_of::<HBAPort>() == 0x80);
 	assert!(size_of::<AHCIVersion>() == 0x4);
 	assert!(size_of::<HBAMemory>() == 0x1100);
+	assert!(align_of::<HBACommandList>() == 1024);
+	// assert!(align_of::<RecievedFIS>() == 256);
+	// assert!(align_of::<CommandTable>() == 128);
 };
 
 /// Setup AHCI

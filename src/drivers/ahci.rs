@@ -1,4 +1,7 @@
-use core::fmt::{Debug, Display};
+use core::{
+	fmt::{Debug, Display},
+	mem::size_of,
+};
 
 use crate::mem::paging;
 use bootloader::boot_info::MemoryRegions;
@@ -47,7 +50,7 @@ struct HBAPort {
 	command_issue: u32,
 	sata_notification: u32,
 	fis_based_switch_control: u32,
-	_reserved2: [u8; 11],
+	_reserved2: [u32; 11],
 	vendor_specific: [u32; 4],
 }
 
@@ -69,6 +72,25 @@ struct HBAMemory {
 	vendor_specific: [u8; 0x100 - 0xA0],
 	ports: [HBAPort; 32],
 }
+
+#[derive(Debug)]
+#[repr(C)]
+struct HBACommandHeader {
+	_things: u16,
+	prd_table_length: u16, // Physical region descriptor table length in entries
+	prd_byte_count: u32,   // Physical region descriptor byte count transffered
+	command_table_base: u32,
+	command_table_base_upper: u32,
+	_reserved: [u32; 4],
+}
+
+type HBACommandList = [HBACommandHeader; 32];
+
+const _: () = {
+	assert!(size_of::<HBAPort>() == 0x80);
+	assert!(size_of::<AHCIVersion>() == 0x4);
+	assert!(size_of::<HBAMemory>() == 0x1100);
+};
 
 /// Setup AHCI
 pub fn setup() {

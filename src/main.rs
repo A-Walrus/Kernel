@@ -3,7 +3,6 @@
 
 extern crate alloc;
 use bootloader::{entry_point, BootInfo};
-use core::fmt::Write;
 use kernel::{
 	cpu::{gdt, interrupts},
 	drivers,
@@ -29,7 +28,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
 		let screen = buffer::Screen::new_from_framebuffer(framebuffer);
 
-		let mut term = buffer::Terminal::new(screen);
+		let term = buffer::Terminal::new(screen);
 
 		unsafe {
 			buffer::TERM = Some(term);

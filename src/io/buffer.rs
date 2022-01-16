@@ -356,7 +356,7 @@ macro_rules! print {
 			match &mut $crate::io::buffer::TERM {
 				Some(term) => {
 					use core::fmt::Write;
-					write!(term, $($arg)*);
+					write!(term, $($arg)*).unwrap();
 				}
 				None => {}
 			}

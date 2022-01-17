@@ -1,8 +1,4 @@
-extern crate alloc;
 use super::paging;
-use crate::{serial_print, serial_println};
-use alloc::alloc::{GlobalAlloc, Layout};
-use core::ptr::null_mut;
 use linked_list_allocator::LockedHeap;
 use x86_64::{
 	addr::VirtAddr,

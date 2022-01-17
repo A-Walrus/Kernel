@@ -5,14 +5,13 @@ use spin::Mutex;
 pub static ALLOCATOR: Mutex<BuddyAllocator> = Mutex::new(BuddyAllocator::new());
 
 use super::paging;
-use crate::{serial_print, serial_println};
+use crate::serial_println;
 use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
-use core::{cmp::max, mem::size_of, ptr::null_mut};
 use paging::phys_to_virt;
 use x86_64::{
 	structures::paging::{
 		page::{Size1GiB, Size2MiB, Size4KiB},
-		FrameAllocator, FrameDeallocator, PageSize, PhysFrame, Translate,
+		FrameAllocator, FrameDeallocator, PhysFrame, Translate,
 	},
 	PhysAddr, VirtAddr,
 };
@@ -79,9 +78,11 @@ fn usable_frames(memory_regions: &'static MemoryRegions) -> impl Iterator<Item =
 	let translation = offset_table.translate(VirtAddr::new(0xFFFF800000000000));
 
 	let phys_addr = match translation {
-		x86_64::structures::paging::mapper::TranslateResult::Mapped { frame, offset, flags } => {
-			frame.start_address().as_u64()
-		}
+		x86_64::structures::paging::mapper::TranslateResult::Mapped {
+			frame,
+			offset: _,
+			flags: _,
+		} => frame.start_address().as_u64(),
 		_ => {
 			unreachable!("Code segment not mapped in page table! (How did this happen?)")
 		}
@@ -104,7 +105,7 @@ fn usable_frames(memory_regions: &'static MemoryRegions) -> impl Iterator<Item =
 pub fn setup(memory_regions: &'static MemoryRegions) {
 	let iterator = usable_frames(memory_regions);
 	let mut allocator = ALLOCATOR.lock();
-	for (i, frame) in iterator.enumerate() {
+	for frame in iterator {
 		let phys_addr = frame.start_address();
 		let virt_addr = phys_to_virt(phys_addr);
 		// serial_println!("Virt addr: {:#x}", virt_addr);
@@ -162,6 +163,7 @@ impl BuddyAllocator {
 		self.free_space
 	}
 
+	#[allow(dead_code)]
 	/// returns index into [BuddyAllocator::linked_lists], which holds the smallest blocks big
 	/// enough to store something of the ```wanted_size```.
 	fn layer_from_size(wanted_size: usize) -> usize {

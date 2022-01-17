@@ -36,6 +36,7 @@ lazy_static! {
 	};
 }
 
+#[allow(dead_code)]
 /// All the data created statically to describe the GDT, and its segments.
 struct Selectors {
 	kernel_code_selector: SegmentSelector,

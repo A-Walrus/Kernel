@@ -1,7 +1,7 @@
+use crate::serial_println;
 use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
-use crate::{serial_print, serial_println};
 use pic8259::ChainedPics;
 use spin;
 use x86_64::structures::idt::PageFaultErrorCode;

@@ -3,7 +3,7 @@ use crate::serial_println;
 use bootloader::boot_info::{FrameBuffer, FrameBufferInfo};
 use core::{fmt::Write, ops, slice};
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
 
 /// Public static terminal.
 pub static mut TERM: Option<Terminal> = None;
@@ -165,6 +165,7 @@ impl<'a> Screen<'a> {
 	}
 }
 
+#[allow(dead_code)]
 /// A utf-8 character and it's style. The [Terminal] is built as a grid of these.
 #[derive(Copy, Clone, Debug)]
 struct Char {
@@ -255,9 +256,12 @@ impl<'a> Terminal<'a> {
 		self.cursor_pos = self.cursor_pos % self.width;
 	}
 
-	const TAB_SIZE: usize = 8;
 	/// Tab horizontally: move cursor forword to nearest multiple of [Terminal::TAB_SIZE].
-	fn horizontal_tab(&mut self) {}
+	fn horizontal_tab(&mut self) {
+		let old_x = self.cursor_pos % self.width;
+		const TAB_SIZE: usize = 8;
+		self.move_cursor(TAB_SIZE - (old_x % TAB_SIZE));
+	}
 
 	/// Write a single [Char] onto the screen, at [Terminal::cursor_pos].
 	fn write_char(&mut self, character: Char) {

@@ -1,13 +1,12 @@
 use super::buddy;
-use crate::{serial_print, serial_println};
+use crate::serial_println;
 use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
-use core::iter;
 use x86_64::{
 	addr::{PhysAddr, VirtAddr},
 	registers::control::Cr3,
 	structures::paging::{
-		mapper::{CleanUp, Mapper, OffsetPageTable},
-		page::{Page, PageRangeInclusive},
+		mapper::{Mapper, OffsetPageTable},
+		page::PageRangeInclusive,
 		page_table::{PageTableEntry, PageTableFlags},
 		FrameAllocator, FrameDeallocator, PageTable, PhysFrame, Size1GiB, Size2MiB, Size4KiB,
 	},
@@ -67,43 +66,37 @@ unsafe fn wipe_recursive(entry: &mut PageTableEntry, depth: usize) {
 	let sub_table = get_sub_table_mut(entry);
 	if depth > 1 {
 		match sub_table {
-			Err(SubPageError::HugePage) => unsafe {
-				match depth {
-					3 => {
-						buddy::ALLOCATOR
-							.lock()
-							.deallocate_frame(PhysFrame::<Size1GiB>::from_start_address(entry.addr()).unwrap());
-					}
-					2 => {
-						buddy::ALLOCATOR
-							.lock()
-							.deallocate_frame(PhysFrame::<Size2MiB>::from_start_address(entry.addr()).unwrap());
-					}
-					_ => {
-						unreachable!("The only depths with huge pages are 2 and 3");
-					}
+			Err(SubPageError::HugePage) => match depth {
+				3 => {
+					buddy::ALLOCATOR
+						.lock()
+						.deallocate_frame(PhysFrame::<Size1GiB>::from_start_address(entry.addr()).unwrap());
+				}
+				2 => {
+					buddy::ALLOCATOR
+						.lock()
+						.deallocate_frame(PhysFrame::<Size2MiB>::from_start_address(entry.addr()).unwrap());
+				}
+				_ => {
+					unreachable!("The only depths with huge pages are 2 and 3");
 				}
 			},
 			Ok(table) => {
 				for sub_entry in table.iter_mut().filter(|entry| !entry.is_unused()) {
 					wipe_recursive(sub_entry, depth - 1);
 				}
-				unsafe {
-					buddy::ALLOCATOR
-						.lock()
-						.deallocate_frame(PhysFrame::<Size4KiB>::from_start_address(entry.addr()).unwrap());
-				}
+				buddy::ALLOCATOR
+					.lock()
+					.deallocate_frame(PhysFrame::<Size4KiB>::from_start_address(entry.addr()).unwrap());
 			}
 			Err(SubPageError::EntryUnused) => {
 				unreachable!("Tried to wipe entry that is unused");
 			}
 		}
 	} else {
-		unsafe {
-			buddy::ALLOCATOR
-				.lock()
-				.deallocate_frame(PhysFrame::<Size4KiB>::from_start_address(entry.addr()).unwrap());
-		}
+		buddy::ALLOCATOR
+			.lock()
+			.deallocate_frame(PhysFrame::<Size4KiB>::from_start_address(entry.addr()).unwrap());
 	}
 	entry.set_unused();
 }
@@ -137,7 +130,7 @@ pub fn get_current_page_table() -> &'static mut PageTable {
 /// * The entire physical memory is mapped in this page table at [PHYSICAL_MAPPING_OFFSET].
 pub unsafe fn get_offset_page_table(page_table: &mut PageTable) -> OffsetPageTable {
 	let offset = VirtAddr::new(PHYSICAL_MAPPING_OFFSET);
-	unsafe { OffsetPageTable::new(page_table, offset) }
+	OffsetPageTable::new(page_table, offset)
 }
 
 /// Get a reference to the page table at a certain physical address.
@@ -148,9 +141,7 @@ unsafe fn get_page_table_by_addr(addr: PhysAddr) -> &'static mut PageTable {
 	let virt_addr = phys_to_virt(addr);
 	let table_ptr = virt_addr.as_mut_ptr();
 	let page_table: &'static mut PageTable;
-	unsafe {
-		page_table = &mut *table_ptr;
-	}
+	page_table = &mut *table_ptr;
 	page_table
 }
 

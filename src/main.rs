@@ -2,7 +2,6 @@
 #![no_main]
 
 extern crate alloc;
-use alloc::{boxed::Box, vec, vec::Vec};
 use bootloader::{entry_point, BootInfo};
 use core::fmt::Write;
 use kernel::{

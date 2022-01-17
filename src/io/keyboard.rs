@@ -2,7 +2,7 @@ use crate::{serial_print, serial_println};
 use lazy_static::lazy_static;
 use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
 use spin::Mutex;
-use x86_64::instructions::port::{Port, PortGeneric, ReadOnlyAccess, ReadWriteAccess, WriteOnlyAccess};
+use x86_64::instructions::port::{Port, PortGeneric, ReadWriteAccess};
 
 const DATA_PORT: u16 = 0x60; // Read/Write
 const STATUS_PORT: u16 = 0x64; // Read

@@ -1,10 +1,10 @@
-use x86_64::instructions::port::{Port, PortGeneric, ReadOnlyAccess, ReadWriteAccess, WriteOnlyAccess};
+use x86_64::instructions::port::{PortGeneric, ReadWriteAccess, WriteOnlyAccess};
 
 const CONFIG_ADDRESS: PortGeneric<u32, WriteOnlyAccess> = PortGeneric::new(0xCF8);
-const CONFIG_DATA: PortGeneric<u32, ReadOnlyAccess> = PortGeneric::new(0xCFC);
+const CONFIG_DATA: PortGeneric<u32, ReadWriteAccess> = PortGeneric::new(0xCFC);
 use alloc::vec::Vec;
 
-use crate::{serial_print, serial_println};
+use crate::serial_println;
 
 // Config address format
 // ╔════════╦════════════╦════════════╦════════════╦══════════════╦═════════════════╗
@@ -171,6 +171,7 @@ fn get_secondary_bus(func: Function) -> u8 {
 	(reg >> 8) as u8
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct Interrupt {
 	pin: u8,
@@ -278,6 +279,7 @@ fn scan_function(func: Function, found: &mut Vec<Function>) {
 	let subclass_code = get_subclass_code(func);
 	if class_code == 0x6 && subclass_code == 0x4 {
 		let secondary_bus = get_secondary_bus(func);
+		scan_bus(secondary_bus, found);
 	}
 }
 

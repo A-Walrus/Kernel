@@ -3,10 +3,8 @@ use core::{
 	mem::{align_of, size_of},
 };
 
-use crate::mem::paging;
-use bootloader::boot_info::MemoryRegions;
-
 use super::pci;
+use crate::mem::paging;
 
 #[repr(C)]
 struct AHCIVersion {
@@ -32,7 +30,7 @@ impl Debug for AHCIVersion {
 
 #[derive(Debug)]
 #[repr(C)]
-struct HBAPort {
+struct Port {
 	command_list_base: u32,       // base address 1KiB aligned
 	command_list_base_upper: u32, // base address upper 32 bits
 	fis_base_address: u32,
@@ -50,13 +48,13 @@ struct HBAPort {
 	command_issue: u32,
 	sata_notification: u32,
 	fis_based_switch_control: u32,
-	_reserved2: [u32; 11],
+	_reserved1: [u32; 11],
 	vendor_specific: [u32; 4],
 }
 
 #[derive(Debug)]
 #[repr(C)]
-struct HBAMemory {
+struct Memory {
 	capabilities: u32,
 	global_host_control: u32,
 	interrupt_status: u32,
@@ -70,13 +68,13 @@ struct HBAMemory {
 	bios_os_handoff: u32,
 	_reserved: [u8; 0xA0 - 0x2C],
 	vendor_specific: [u8; 0x100 - 0xA0],
-	ports: [HBAPort; 32],
+	ports: [Port; 32],
 }
 
 #[derive(Debug)]
 #[repr(C)]
-struct HBACommandHeader {
-	_things: u16,
+struct CommandHeader {
+	_bits: u16,
 	prd_table_length: u16, // Physical region descriptor table length in entries
 	prd_byte_count: u32,   // Physical region descriptor byte count transffered
 	command_table_base: u32,
@@ -85,15 +83,161 @@ struct HBACommandHeader {
 }
 
 #[repr(align(1024))]
-struct HBACommandList([HBACommandHeader; 32]);
+struct CommandList([CommandHeader; 32]);
+
+#[derive(Debug)]
+#[repr(u8)]
+enum FisType {
+	RegHostToDevice = 0x27,
+	RegDeviceToHost = 0x34,
+	DmaActivate = 0x39,
+	DmaSetup = 0x41,
+	Data = 0x46,
+	Bist = 0x58,
+	PioSetup = 0x5F,
+	DeviceBits = 0xA1,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+struct FisRegDeviceToHost {
+	fis_type: FisType,
+	_bits: u8,
+	status: u8,
+	error: u8,
+	lba0: u8,
+	lba1: u8,
+	lba2: u8,
+	device: u8,
+	lba3: u8,
+	lba4: u8,
+	lba5: u8,
+	_reserved0: u8,
+	count_low: u8,
+	count_hight: u8,
+	_reserved1: [u8; 2],
+	_reserved2: [u8; 4],
+}
+
+#[repr(C)]
+#[derive(Debug)]
+struct FisRegHostToDevice {
+	fis_type: FisType,
+	_bits: u8,
+	command: u8,
+	feature_low: u8,
+	lba0: u8,
+	lba1: u8,
+	lba2: u8,
+	device: u8,
+	lba3: u8,
+	lba4: u8,
+	lba5: u8,
+	feature_high: u8,
+	count_low: u8,
+	count_high: u8,
+	_reserved0: u8,
+	control: u8,
+	_reserved1: [u8; 4],
+}
+
+#[repr(C)]
+#[derive(Debug)]
+struct FisData {
+	fis_type: FisType,
+	_bits: u8,
+	_rserved0: [u8; 2],
+	data: (), // TODO figure out what type this should be
+}
+
+#[repr(C)]
+#[derive(Debug)]
+struct FisPioSetup {
+	fis_type: FisType,
+	_bits: u8,
+	status: u8,
+	error: u8,
+	lba0: u8,
+	lba1: u8,
+	lba2: u8,
+	device: u8,
+	lba3: u8,
+	lba4: u8,
+	lba5: u8,
+	_reserved0: u8,
+	count_low: u8,
+	count_high: u8,
+	_reserved1: u8,
+	e_status: u8,
+	transfer_count: u16,
+	_reserved2: [u8; 2],
+}
+
+#[derive(Debug)]
+#[repr(C, align(128))]
+struct CommandTable {
+	command_fis: [u8; 64],
+	atapi_command: [u8; 16],
+	_reserved: [u8; 48],
+	prdt_entries: (), // TODO figure out type for this
+}
+
+#[derive(Debug)]
+#[repr(C)]
+struct PrdtEntry {
+	data_base_address: u32,
+	data_base_address_upper: u32,
+	_reserved: u32,
+	_bits: u32,
+}
+#[derive(Debug)]
+#[repr(C)]
+struct FisDmaSetup {
+	fis_type: FisType,
+	_bits: u8,
+	_reserved0: [u8; 2],
+	dma_buffer_id_low: u32,
+	dma_buffer_id_high: u32,
+	_reserved1: u32,
+	dma_buffer_offset: u32,
+	transfer_count: u32,
+	_reserved2: [u8; 4],
+}
+
+#[derive(Debug)]
+#[repr(C)]
+struct FisSetDeviceBits {
+	fis_type: FisType,
+	_bits: u16,
+	error: u8,
+	_reserved: [u8; 4],
+}
+#[derive(Debug)]
+#[repr(C, align(256))]
+struct RecievedFis {
+	dma_setup: FisDmaSetup,
+	_pad0: [u8; 4],
+	pio_setup: FisPioSetup,
+	_pad1: [u8; 12],
+	d2h_register: FisRegDeviceToHost,
+	_pad2: [u8; 4],
+	set_device_bits: FisSetDeviceBits,
+	unknown_fis: [u8; 64],
+	_reserved: [u8; 0x100 - 0xA0],
+}
 
 const _: () = {
-	assert!(size_of::<HBAPort>() == 0x80);
+	assert!(size_of::<Port>() == 0x80);
 	assert!(size_of::<AHCIVersion>() == 0x4);
-	assert!(size_of::<HBAMemory>() == 0x1100);
-	assert!(align_of::<HBACommandList>() == 1024);
-	// assert!(align_of::<RecievedFIS>() == 256);
-	// assert!(align_of::<CommandTable>() == 128);
+	assert!(size_of::<Memory>() == 0x1100);
+	assert!(align_of::<CommandList>() == 1024);
+	assert!(align_of::<RecievedFis>() == 256);
+	assert!(size_of::<FisRegDeviceToHost>() == 20);
+	assert!(size_of::<FisRegHostToDevice>() == 20);
+	assert!(size_of::<FisDmaSetup>() == 28);
+	assert!(size_of::<PrdtEntry>() == 16);
+	assert!(align_of::<u64>() == 8);
+	assert!(align_of::<CommandTable>() == 128);
 };
 
 /// Setup AHCI
@@ -120,7 +264,7 @@ pub fn setup() {
 				}
 			}
 			let virt_addr = paging::phys_to_virt(address);
-			let hba_memory: &mut HBAMemory;
+			let hba_memory: &mut Memory;
 			unsafe {
 				hba_memory = &mut *(virt_addr.as_mut_ptr());
 			}

@@ -29,6 +29,15 @@ impl Debug for AHCIVersion {
 }
 
 #[derive(Debug)]
+enum DeviceType {
+	Sata,
+	Semb,
+	PortMultiplier,
+	Satapi,
+	Other,
+}
+
+#[derive(Debug)]
 #[repr(C)]
 struct Port {
 	command_list_base: u32,       // base address 1KiB aligned
@@ -52,6 +61,26 @@ struct Port {
 	vendor_specific: [u32; 4],
 }
 
+impl Port {
+	fn get_interface_power_management(&self) -> u8 {
+		((self.sata_status >> 8) & 0x0F) as u8
+	}
+
+	fn get_device_detection(&self) -> u8 {
+		(self.sata_status & 0x0F) as u8
+	}
+
+	fn get_device_type(&self) -> DeviceType {
+		match self.signature {
+			0x0000_0101 => DeviceType::Sata,
+			0xEB14_0101 => DeviceType::Satapi,
+			0xc33c_0101 => DeviceType::Semb,
+			0x9669_0101 => DeviceType::PortMultiplier,
+			_ => DeviceType::Other,
+		}
+	}
+}
+
 #[derive(Debug)]
 #[repr(C)]
 struct Memory {
@@ -69,6 +98,12 @@ struct Memory {
 	_reserved: [u8; 0xA0 - 0x2C],
 	vendor_specific: [u8; 0x100 - 0xA0],
 	ports: [Port; 32],
+}
+
+impl Memory {
+	fn is_port_implemented(&self, port: u8) -> bool {
+		(self.port_implemented >> port) & 1 == 1
+	}
 }
 
 #[derive(Debug)]
@@ -270,11 +305,30 @@ pub fn setup() {
 			unsafe {
 				hba_memory = &mut *(virt_addr.as_mut_ptr());
 			}
-			serial_println!("{:#?}", hba_memory);
 			println!("{}", hba_memory.version);
+			probe_ports(hba_memory);
 		}
 		None => {
 			serial_println!("No AHCI device, cannot access storage!");
 		}
+	}
+}
+
+fn probe_ports(abar: &Memory) {
+	for port in 0..32 {
+		if abar.is_port_implemented(port) {
+			let device_type = check_type(&abar.ports[port as usize]);
+			serial_println!("Port {}: {:?}", port, device_type);
+		}
+	}
+}
+
+fn check_type(port: &Port) -> Option<DeviceType> {
+	if port.get_device_detection() != 3 || port.get_interface_power_management() != 1 {
+		// no device connected
+		return None;
+	} else {
+		// device connected
+		Some(port.get_device_type())
 	}
 }

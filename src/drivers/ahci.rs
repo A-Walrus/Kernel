@@ -82,9 +82,11 @@ struct CommandHeader {
 	_reserved: [u32; 4],
 }
 
+#[allow(dead_code)]
 #[repr(align(1024))]
 struct CommandList([CommandHeader; 32]);
 
+#[allow(dead_code)]
 #[derive(Debug)]
 #[repr(u8)]
 enum FisType {

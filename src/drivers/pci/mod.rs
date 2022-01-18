@@ -142,6 +142,7 @@ enum HeaderType {
 	Reserved = 0xff,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct HeaderTypeField {
 	header_type: HeaderType,

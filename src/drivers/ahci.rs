@@ -75,8 +75,8 @@ struct Memory {
 #[repr(C)]
 struct CommandHeader {
 	_bits: u16,
-	prd_table_length: u16, // Physical region descriptor table length in entries
-	prd_byte_count: u32,   // Physical region descriptor byte count transffered
+	prdt_length: u16,    // Physical region descriptor table length in entries
+	prd_byte_count: u32, // Physical region descriptor byte count transffered
 	command_table_base: u32,
 	command_table_base_upper: u32,
 	_reserved: [u32; 4],
@@ -179,7 +179,7 @@ struct CommandTable {
 	command_fis: [u8; 64],
 	atapi_command: [u8; 16],
 	_reserved: [u8; 48],
-	prdt_entries: (), // TODO figure out type for this
+	prdt_entries: (), // TODO figure out type for this. Its length is command header prdt_length
 }
 
 #[derive(Debug)]

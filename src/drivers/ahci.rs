@@ -6,7 +6,10 @@ use core::{
 use alloc::boxed::Box;
 
 use super::pci;
-use crate::mem::{heap::UNCACHED_ALLOCATOR, paging};
+use crate::mem::{
+	heap::{ALLOCATOR, UNCACHED_ALLOCATOR},
+	paging,
+};
 
 #[repr(C)]
 struct AHCIVersion {
@@ -313,7 +316,7 @@ pub fn setup() {
 			serial_println!("No AHCI device, cannot access storage!");
 		}
 	}
-	let a = Box::new_in(5, &UNCACHED_ALLOCATOR);
+	let a = Box::new_in(5, &ALLOCATOR);
 }
 
 fn probe_ports(abar: &Memory) {

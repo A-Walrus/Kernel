@@ -10,7 +10,7 @@ use x86_64::{
 
 /// This is the global allocator. It is automatically used by things like box and vec.
 #[global_allocator]
-static ALLOCATOR: LockedHeap = LockedHeap::empty();
+pub static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
 /// Starting virtual address of the kernel heap.
 const HEAP_START: usize = 0xFFFFD00000000000;
@@ -51,7 +51,7 @@ pub fn setup(frambuffer_size: usize) {
 		let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE;
 		paging::map_in_current(range, flags);
 		unsafe {
-			ALLOCATOR.lock().init(UNCACHED_HEAP_START, uncached_heap_size);
+			UNCACHED_ALLOCATOR.lock().init(UNCACHED_HEAP_START, uncached_heap_size);
 		}
 	}
 }

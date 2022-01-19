@@ -3,8 +3,10 @@ use core::{
 	mem::{align_of, size_of},
 };
 
+use alloc::boxed::Box;
+
 use super::pci;
-use crate::mem::paging;
+use crate::mem::{heap::UNCACHED_ALLOCATOR, paging};
 
 #[repr(C)]
 struct AHCIVersion {
@@ -40,8 +42,7 @@ enum DeviceType {
 #[derive(Debug)]
 #[repr(C)]
 struct Port {
-	command_list_base: u32,       // base address 1KiB aligned
-	command_list_base_upper: u32, // base address upper 32 bits
+	command_list_base: u64, // base address 1KiB aligned
 	fis_base_address: u32,
 	fis_base_address_upper: u32,
 	interrupt_status: u32,
@@ -312,6 +313,7 @@ pub fn setup() {
 			serial_println!("No AHCI device, cannot access storage!");
 		}
 	}
+	let a = Box::new_in(5, &UNCACHED_ALLOCATOR);
 }
 
 fn probe_ports(abar: &Memory) {
@@ -329,6 +331,7 @@ fn check_type(port: &Port) -> Option<DeviceType> {
 		return None;
 	} else {
 		// device connected
+		serial_println!("{:#X}", port.command_list_base);
 		Some(port.get_device_type())
 	}
 }

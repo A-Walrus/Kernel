@@ -3,11 +3,9 @@ use core::{
 	mem::{align_of, size_of},
 };
 
-use alloc::boxed::Box;
-
 use super::pci;
 use crate::mem::{
-	heap::{ALLOCATOR, UNCACHED_ALLOCATOR},
+	heap::{self, ALLOCATOR, UNCACHED_ALLOCATOR},
 	paging,
 };
 
@@ -283,6 +281,8 @@ const _: () = {
 
 /// Setup AHCI
 pub fn setup() {
+	let boxed = heap::uncache_box_new(5);
+
 	let functions = pci::recursive_scan();
 	let res = functions
 		.iter()
@@ -316,7 +316,6 @@ pub fn setup() {
 			serial_println!("No AHCI device, cannot access storage!");
 		}
 	}
-	let a = Box::new_in(5, &ALLOCATOR);
 }
 
 fn probe_ports(abar: &Memory) {

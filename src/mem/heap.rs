@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::alloc::{GlobalAlloc, Layout};
+use core::alloc::{Allocator, GlobalAlloc, Layout};
 
 use super::paging;
 use linked_list_allocator::{Heap, LockedHeap};
@@ -60,12 +60,12 @@ pub fn setup(frambuffer_size: usize) {
 }
 
 /// Like [Box::new_in] for the uncached heap (but it doesn't cause the compiler to crash)
-pub fn uncache_box_new<T>(value: T) -> Box<T> {
+pub fn uncache_box_new<T>(value: T) -> Box<T, &'static LockedHeap> {
 	unsafe {
-		let raw_ptr = UNCACHED_ALLOCATOR.alloc(Layout::for_value(&value));
+		let raw_ptr = UNCACHED_ALLOCATOR.allocate(Layout::new::<T>()).unwrap().as_mut_ptr();
 		let ptr = raw_ptr as *mut T;
 		let reference = &mut *ptr;
 		*reference = value;
-		Box::from_raw(ptr)
+		Box::from_raw_in(ptr, &UNCACHED_ALLOCATOR)
 	}
 }

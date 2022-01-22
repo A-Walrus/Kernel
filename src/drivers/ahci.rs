@@ -4,10 +4,7 @@ use core::{
 };
 
 use super::pci;
-use crate::mem::{
-	heap::{self, ALLOCATOR, UNCACHED_ALLOCATOR},
-	paging,
-};
+use crate::mem::{heap::UBox, paging};
 
 #[repr(C)]
 struct AHCIVersion {
@@ -281,7 +278,8 @@ const _: () = {
 
 /// Setup AHCI
 pub fn setup() {
-	let boxed = heap::uncache_box_new(5);
+	let a = UBox::new(5);
+	println!("{}", *a);
 
 	let functions = pci::recursive_scan();
 	let res = functions

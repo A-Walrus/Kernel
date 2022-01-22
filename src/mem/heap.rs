@@ -1,8 +1,10 @@
-use alloc::boxed::Box;
-use core::alloc::{Allocator, GlobalAlloc, Layout};
+use core::{
+	alloc::{GlobalAlloc, Layout},
+	ops::{Deref, DerefMut},
+};
 
 use super::paging;
-use linked_list_allocator::{Heap, LockedHeap};
+use linked_list_allocator::LockedHeap;
 use x86_64::{
 	addr::VirtAddr,
 	structures::paging::{
@@ -59,13 +61,40 @@ pub fn setup(frambuffer_size: usize) {
 	}
 }
 
-/// Like [Box::new_in] for the uncached heap (but it doesn't cause the compiler to crash)
-pub fn uncache_box_new<T>(value: T) -> Box<T, &'static LockedHeap> {
-	unsafe {
-		let raw_ptr = UNCACHED_ALLOCATOR.allocate(Layout::new::<T>()).unwrap().as_mut_ptr();
-		let ptr = raw_ptr as *mut T;
-		let reference = &mut *ptr;
-		*reference = value;
-		Box::from_raw_in(ptr, &UNCACHED_ALLOCATOR)
+/// Box that is allocated and deallocated from the uncached allocator
+pub struct UBox<T> {
+	ptr: *mut T,
+}
+
+impl<T> UBox<T> {
+	/// Create a new uncached box around this value. This will be allocated in an uncached area, and deallocated when the [UBox] is dropped.
+	/// Since this is using the allocator api, the alignment and layout should be correct, according to the type.
+	pub fn new(value: T) -> Self {
+		unsafe {
+			let raw_ptr = UNCACHED_ALLOCATOR.alloc(Layout::new::<T>());
+			let ptr = raw_ptr as *mut T;
+			let reference = &mut *ptr;
+			*reference = value;
+			UBox { ptr: ptr }
+		}
+	}
+}
+
+impl<T> Deref for UBox<T> {
+	type Target = T;
+	fn deref(&self) -> &Self::Target {
+		unsafe { &*self.ptr }
+	}
+}
+
+impl<T> DerefMut for UBox<T> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		unsafe { &mut *self.ptr }
+	}
+}
+
+impl<T> Drop for UBox<T> {
+	fn drop(&mut self) {
+		unsafe { UNCACHED_ALLOCATOR.dealloc(self.ptr as *mut u8, Layout::new::<T>()) }
 	}
 }

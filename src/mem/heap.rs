@@ -71,13 +71,31 @@ impl<T> UBox<T> {
 	/// Since this is using the allocator api, the alignment and layout should be correct, according to the type.
 	pub fn new(value: T) -> Self {
 		unsafe {
-			let raw_ptr = UNCACHED_ALLOCATOR.alloc(Layout::new::<T>());
-			let ptr = raw_ptr as *mut T;
-			let reference = &mut *ptr;
-			*reference = value;
+			let ptr = uncached_allocate_value(value);
 			UBox { ptr: ptr }
 		}
 	}
+}
+
+/// Allocate space for a type in an uncached area and initialize it with zeroes.
+/// # Safety
+/// - This is unsafe because all zeroes may not be a valid value for the type
+pub unsafe fn uncached_allocate_zeroed<T>() -> *mut T {
+	let layout = Layout::new::<T>();
+	let raw_ptr = UNCACHED_ALLOCATOR.alloc(layout);
+	let ptr = raw_ptr as *mut T;
+	serial_println!("{:?} {:?}", raw_ptr, ptr);
+	raw_ptr.write_bytes(0, layout.size());
+	ptr
+}
+
+/// Allocate room for the value on the uncached heap. Copies the value to the new allocated area.
+pub unsafe fn uncached_allocate_value<T>(value: T) -> *mut T {
+	let raw_ptr = UNCACHED_ALLOCATOR.alloc(Layout::new::<T>());
+	let ptr = raw_ptr as *mut T;
+	let reference = &mut *ptr;
+	*reference = value;
+	ptr
 }
 
 impl<T> Deref for UBox<T> {

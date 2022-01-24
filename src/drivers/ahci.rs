@@ -4,7 +4,13 @@ use core::{
 };
 
 use super::pci;
-use crate::mem::{heap::UBox, paging};
+use crate::mem::{
+	heap::{uncached_allocate_value, uncached_allocate_zeroed, UBox},
+	paging,
+};
+use alloc::vec::Vec;
+
+const PRDTL: usize = 8;
 
 #[repr(C)]
 struct AHCIVersion {
@@ -37,15 +43,25 @@ enum DeviceType {
 	Other,
 }
 
+use bitflags::bitflags;
+bitflags! {
+	struct Status:u32 {
+		const START = 0x0001;
+		const FIS_RECEIVED_ENABLE = 0x0010;
+		const FIS_RECEIVED_RUNNING = 0x4000;
+		const COMMAND_LIST_RUNNING = 0x8000;
+
+	}
+}
+
 #[derive(Debug)]
 #[repr(C)]
 struct Port {
-	command_list_base: u64, // base address 1KiB aligned
-	fis_base_address: u32,
-	fis_base_address_upper: u32,
+	command_list_base: *mut CommandList, // base address 1KiB aligned
+	fis_base_address: *mut RecievedFis,
 	interrupt_status: u32,
 	interrupt_enable: u32,
-	command_and_status: u32,
+	command_and_status: Status,
 	_reserved0: u32,
 	task_file_data: u32,
 	signature: u32,
@@ -69,6 +85,11 @@ impl Port {
 		(self.sata_status & 0x0F) as u8
 	}
 
+	fn is_device_connected(&self) -> bool {
+		self.get_device_detection() == 3 && self.get_interface_power_management() == 1
+	}
+
+	#[allow(dead_code)]
 	fn get_device_type(&self) -> DeviceType {
 		match self.signature {
 			0x0000_0101 => DeviceType::Sata,
@@ -77,6 +98,45 @@ impl Port {
 			0x9669_0101 => DeviceType::PortMultiplier,
 			_ => DeviceType::Other,
 		}
+	}
+
+	fn rebase(&mut self) {
+		self.stop_command();
+
+		unsafe {
+			let fis_base_address: *mut RecievedFis = uncached_allocate_zeroed();
+			self.fis_base_address = fis_base_address;
+
+			let command_list_base: *mut CommandList = uncached_allocate_value(CommandList(
+				[CommandHeader {
+					_bits: 0,
+					prdt_length: 8,
+					prd_byte_count: 0,
+					_reserved: [0; 4],
+					command_table_base: uncached_allocate_zeroed(),
+				}; 32],
+			));
+			self.command_list_base = command_list_base;
+		}
+
+		self.start_command();
+	}
+
+	fn start_command(&mut self) {
+		// wait until CR is cleared
+		while self.command_and_status.contains(Status::COMMAND_LIST_RUNNING) {}
+
+		self.command_and_status
+			.insert(Status::FIS_RECEIVED_ENABLE | Status::START);
+	}
+
+	fn stop_command(&mut self) {
+		let status = &mut self.command_and_status;
+
+		status.remove(Status::START | Status::FIS_RECEIVED_ENABLE);
+
+		// wait until FR and CR are cleared
+		while status.contains(Status::FIS_RECEIVED_RUNNING) && status.contains(Status::COMMAND_LIST_RUNNING) {}
 	}
 }
 
@@ -103,16 +163,23 @@ impl Memory {
 	fn is_port_implemented(&self, port: u8) -> bool {
 		(self.port_implemented >> port) & 1 == 1
 	}
+
+	fn is_port_available(&self, port: u8) -> bool {
+		self.is_port_implemented(port) && self.ports[port as usize].is_device_connected()
+	}
+
+	fn available_ports(&self) -> Vec<usize> {
+		(0..32).filter(|i| self.is_port_available(*i as u8)).collect()
+	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C)]
 struct CommandHeader {
 	_bits: u16,
-	prdt_length: u16,    // Physical region descriptor table length in entries
+	prdt_length: u16,    // Physical region descriptor table length in entries (should be equal to [PRDTL]
 	prd_byte_count: u32, // Physical region descriptor byte count transffered
-	command_table_base: u32,
-	command_table_base_upper: u32,
+	command_table_base: *mut CommandTable,
 	_reserved: [u32; 4],
 }
 
@@ -215,7 +282,7 @@ struct CommandTable {
 	command_fis: [u8; 64],
 	atapi_command: [u8; 16],
 	_reserved: [u8; 48],
-	prdt_entries: (), // TODO figure out type for this. Its length is command header prdt_length
+	prdt_entries: [PrdtEntry; PRDTL],
 }
 
 #[derive(Debug)]
@@ -272,15 +339,11 @@ const _: () = {
 	assert!(size_of::<FisRegHostToDevice>() == 20);
 	assert!(size_of::<FisDmaSetup>() == 28);
 	assert!(size_of::<PrdtEntry>() == 16);
-	assert!(align_of::<u64>() == 8);
 	assert!(align_of::<CommandTable>() == 128);
 };
 
 /// Setup AHCI
 pub fn setup() {
-	let a = UBox::new(5);
-	println!("{}", *a);
-
 	let functions = pci::recursive_scan();
 	let res = functions
 		.iter()
@@ -308,30 +371,13 @@ pub fn setup() {
 				hba_memory = &mut *(virt_addr.as_mut_ptr());
 			}
 			println!("{}", hba_memory.version);
-			probe_ports(hba_memory);
+			let ports = hba_memory.available_ports();
+			for port in ports {
+				hba_memory.ports[port].rebase();
+			}
 		}
 		None => {
 			serial_println!("No AHCI device, cannot access storage!");
 		}
-	}
-}
-
-fn probe_ports(abar: &Memory) {
-	for port in 0..32 {
-		if abar.is_port_implemented(port) {
-			let device_type = check_type(&abar.ports[port as usize]);
-			serial_println!("Port {}: {:?}", port, device_type);
-		}
-	}
-}
-
-fn check_type(port: &Port) -> Option<DeviceType> {
-	if port.get_device_detection() != 3 || port.get_interface_power_management() != 1 {
-		// no device connected
-		return None;
-	} else {
-		// device connected
-		serial_println!("{:#X}", port.command_list_base);
-		Some(port.get_device_type())
 	}
 }

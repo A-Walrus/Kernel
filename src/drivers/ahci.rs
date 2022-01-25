@@ -10,6 +10,10 @@ use crate::mem::{
 };
 use alloc::vec::Vec;
 
+// TODO I think the addresses are physical :( so alot of code is wrong
+
+
+
 const PRDTL: usize = 8;
 
 #[repr(C)]
@@ -76,7 +80,55 @@ struct Port {
 	vendor_specific: [u32; 4],
 }
 
+type Sector = [u8; 512];
+
 impl Port {
+	fn read(&mut self, start_sector: u64, buf: &mut [Sector]) {
+		let mut sector_count = buf.len();
+		// Clear pending interrut bits
+		self.interrupt_status = 0xFFFFFFFF;
+
+		let slot_option = self.find_command_slot();
+		if let Some(slot) = slot_option {
+			let command_list;
+			unsafe {
+				command_list = &mut *self.command_list_base;
+			}
+			let command_header: &mut CommandHeader = &mut command_list.0[slot];
+			unimplemented!(); // TODO set cfl and w bit fields
+			command_header.prdt_length = (((sector_count - 1) >> 4) + 1) as u16;
+			let command_table;
+			unsafe {
+				command_header.command_table_base.write_bytes(0, 1);
+				command_table = &mut *command_header.command_table_base;
+			}
+
+			let mut addr = buf as *mut _ as usize;
+			for i in 0..command_header.prdt_length - 1 {
+				let entry = command_table.prdt_entries[i as usize];
+				// entry.data_base_address = addr;
+				// entry.dbc = TODO;
+				// entry.i = TODO;
+				addr += 4 * 1024;
+				sector_count -= 16;
+			}
+            // TODO rest of the fucking owl
+		} else {
+			// TODO Fail
+		}
+	}
+
+	fn find_command_slot(&self) -> Option<usize> {
+		let mut slots = self.command_issue | self.sata_active;
+		for i in 0..32 {
+			if slots & 1 == 0 {
+				return Some(i);
+			}
+			slots >>= 1;
+		}
+		None
+	}
+
 	fn get_interface_power_management(&self) -> u8 {
 		((self.sata_status >> 8) & 0x0F) as u8
 	}
@@ -288,8 +340,7 @@ struct CommandTable {
 #[derive(Debug)]
 #[repr(C)]
 struct PrdtEntry {
-	data_base_address: u32,
-	data_base_address_upper: u32,
+	data_base_address: ,
 	_reserved: u32,
 	_bits: u32,
 }

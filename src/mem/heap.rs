@@ -81,11 +81,10 @@ impl<T> UBox<T> {
 /// # Safety
 /// - This is unsafe because all zeroes may not be a valid value for the type
 pub unsafe fn uncached_allocate_zeroed<T>() -> *mut T {
-	let layout = Layout::new::<T>();
-	let raw_ptr = UNCACHED_ALLOCATOR.alloc(layout);
+	let raw_ptr = UNCACHED_ALLOCATOR.alloc(Layout::new::<T>());
 	let ptr = raw_ptr as *mut T;
 	serial_println!("{:?} {:?}", raw_ptr, ptr);
-	raw_ptr.write_bytes(0, layout.size());
+	ptr.write_bytes(0, 1);
 	ptr
 }
 

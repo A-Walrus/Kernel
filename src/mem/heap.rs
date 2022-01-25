@@ -83,7 +83,6 @@ impl<T> UBox<T> {
 pub unsafe fn uncached_allocate_zeroed<T>() -> *mut T {
 	let raw_ptr = UNCACHED_ALLOCATOR.alloc(Layout::new::<T>());
 	let ptr = raw_ptr as *mut T;
-	serial_println!("{:?} {:?}", raw_ptr, ptr);
 	ptr.write_bytes(0, 1);
 	ptr
 }

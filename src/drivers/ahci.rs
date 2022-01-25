@@ -1,20 +1,31 @@
+use alloc::vec::Vec;
 use core::{
 	fmt::{Debug, Display},
+	marker::PhantomData,
 	mem::{align_of, size_of},
+	ops::{Deref, DerefMut},
 };
+use hashbrown::HashMap;
+use lazy_static::lazy_static;
+use spin::Mutex;
+use x86_64::{structures::paging::mapper::Translate, PhysAddr, VirtAddr};
 
 use super::pci;
 use crate::mem::{
 	heap::{uncached_allocate_value, uncached_allocate_zeroed, UBox},
-	paging,
+	paging::{self, virt_to_phys},
 };
-use alloc::vec::Vec;
+
+use bitflags::bitflags;
+use modular_bitfield::{bitfield, prelude::*};
 
 // TODO I think the addresses are physical :( so alot of code is wrong
 
-
-
 const PRDTL: usize = 8;
+
+lazy_static! {
+	static ref PHYS_TO_VIRT: Mutex<HashMap<u64, VirtAddr>> = Mutex::new(HashMap::new());
+}
 
 #[repr(C)]
 struct AHCIVersion {
@@ -47,7 +58,6 @@ enum DeviceType {
 	Other,
 }
 
-use bitflags::bitflags;
 bitflags! {
 	struct Status:u32 {
 		const START = 0x0001;
@@ -61,8 +71,8 @@ bitflags! {
 #[derive(Debug)]
 #[repr(C)]
 struct Port {
-	command_list_base: *mut CommandList, // base address 1KiB aligned
-	fis_base_address: *mut RecievedFis,
+	command_list_base: PhysPtr<CommandList>,
+	fis_base_address: PhysPtr<RecievedFis>,
 	interrupt_status: u32,
 	interrupt_enable: u32,
 	command_and_status: Status,
@@ -91,30 +101,71 @@ impl Port {
 		let slot_option = self.find_command_slot();
 		if let Some(slot) = slot_option {
 			let command_list;
-			unsafe {
-				command_list = &mut *self.command_list_base;
-			}
+			command_list = &mut *self.command_list_base;
 			let command_header: &mut CommandHeader = &mut command_list.0[slot];
-			unimplemented!(); // TODO set cfl and w bit fields
+			let bits = &mut command_header.bits;
+			bits.set_write(false);
+			let cfl = (size_of::<FisRegHostToDevice>() / 4) as u8;
+			bits.set_command_fis_length_checked(cfl)
+				.expect("Command fis length out of bounds");
 			command_header.prdt_length = (((sector_count - 1) >> 4) + 1) as u16;
 			let command_table;
 			unsafe {
-				command_header.command_table_base.write_bytes(0, 1);
 				command_table = &mut *command_header.command_table_base;
+				(command_table as *mut CommandTable).write_bytes(0, 1);
 			}
 
-			let mut addr = buf as *mut _ as usize;
+			let mut addr = buf.as_ptr() as usize as u64;
 			for i in 0..command_header.prdt_length - 1 {
-				let entry = command_table.prdt_entries[i as usize];
-				// entry.data_base_address = addr;
-				// entry.dbc = TODO;
-				// entry.i = TODO;
+				let entry = &mut command_table.prdt_entry[i as usize];
+				entry.data_base_address = virt_to_phys(VirtAddr::new(addr)).as_u64();
+				entry.bits.set_byte_count(8 * 1024 - 1);
+				entry.bits.set_interrupt_on_completion(true);
 				addr += 4 * 1024;
 				sector_count -= 16;
 			}
-            // TODO rest of the fucking owl
+
+			let entry = &mut command_table.prdt_entry[command_header.prdt_length as usize - 1];
+			entry.data_base_address = addr;
+			entry.bits.set_byte_count(((sector_count << 9) - 1) as u32);
+			entry.bits.set_interrupt_on_completion(true);
+
+			let command_fis;
+			unsafe {
+				command_fis = &mut *(&mut command_table.command_fis as *mut _ as *mut FisRegHostToDevice);
+			}
+			let bits = FisRegH2DBits::new().with_command_or_control(true);
+			let command = 25;
+			*command_fis = FisRegHostToDevice::new(bits, command, 0, start_sector, sector_count as u16, 1 << 6);
+
+			let mut broke = false;
+			for _ in 0..0x100000 {
+				if self.task_file_data & 0x88 != 0 {
+					broke = true;
+					break;
+				}
+			}
+			if broke {
+				let ci = 1 << slot;
+				// Issue command
+				self.command_issue = ci;
+
+				// wait for completion
+
+				loop {
+					if self.command_issue & ci == 0 {
+						break;
+					}
+					// if self.interrupt_status TODO check error
+				}
+			// TODO check error again
+			} else {
+				panic!("Fail");
+				// TODO fail
+			}
 		} else {
-			// TODO Fail
+			panic!("Fail");
+			// TODO fail
 		}
 	}
 
@@ -157,18 +208,18 @@ impl Port {
 
 		unsafe {
 			let fis_base_address: *mut RecievedFis = uncached_allocate_zeroed();
-			self.fis_base_address = fis_base_address;
+			self.fis_base_address = PhysPtr::new(fis_base_address);
 
 			let command_list_base: *mut CommandList = uncached_allocate_value(CommandList(
 				[CommandHeader {
-					_bits: 0,
+					bits: CommandHeaderBits::new(),
 					prdt_length: 8,
 					prd_byte_count: 0,
 					_reserved: [0; 4],
-					command_table_base: uncached_allocate_zeroed(),
+					command_table_base: PhysPtr::new(uncached_allocate_zeroed()),
 				}; 32],
 			));
-			self.command_list_base = command_list_base;
+			self.command_list_base = PhysPtr::new(command_list_base);
 		}
 
 		self.start_command();
@@ -225,18 +276,35 @@ impl Memory {
 	}
 }
 
+#[bitfield]
+#[allow(dead_code)]
+#[derive(Debug, Copy, Clone)]
+struct CommandHeaderBits {
+	command_fis_length: B5,
+	atapi: bool,
+	/// true: H2D, false : D2H
+	write: bool,
+	prefetchable: bool,
+	reset: bool,
+	bist: bool,
+	clear_busy_upon_r_ok: bool,
+	reserved: B1,
+	port_multiplier_port: B4,
+}
+
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 struct CommandHeader {
-	_bits: u16,
+	bits: CommandHeaderBits,
 	prdt_length: u16,    // Physical region descriptor table length in entries (should be equal to [PRDTL]
 	prd_byte_count: u32, // Physical region descriptor byte count transffered
-	command_table_base: *mut CommandTable,
+	command_table_base: PhysPtr<CommandTable>,
 	_reserved: [u32; 4],
 }
 
 #[allow(dead_code)]
 #[repr(align(1024))]
+#[derive(Debug)]
 struct CommandList([CommandHeader; 32]);
 
 #[allow(dead_code)]
@@ -274,11 +342,20 @@ struct FisRegDeviceToHost {
 	_reserved2: [u8; 4],
 }
 
+#[bitfield]
+#[derive(Debug)]
+struct FisRegH2DBits {
+	port_multiplier_port: B4,
+	reserved: B3,
+	/// true: command, false: control
+	command_or_control: bool,
+}
+
 #[repr(C)]
 #[derive(Debug)]
 struct FisRegHostToDevice {
 	fis_type: FisType,
-	_bits: u8,
+	bits: FisRegH2DBits,
 	command: u8,
 	feature_low: u8,
 	lba0: u8,
@@ -289,11 +366,33 @@ struct FisRegHostToDevice {
 	lba4: u8,
 	lba5: u8,
 	feature_high: u8,
-	count_low: u8,
-	count_high: u8,
+	count: u16,
 	_reserved0: u8,
 	control: u8,
 	_reserved1: [u8; 4],
+}
+
+impl FisRegHostToDevice {
+	fn new(bits: FisRegH2DBits, command: u8, control: u8, lba: u64, count: u16, device: u8) -> Self {
+		Self {
+			fis_type: FisType::RegHostToDevice,
+			bits,
+			command,
+			feature_low: 0,
+			lba0: lba as u8,
+			lba1: (lba >> 8) as u8,
+			lba2: (lba >> 16) as u8,
+			lba3: (lba >> 24) as u8,
+			lba4: (lba >> 32) as u8,
+			lba5: (lba >> 40) as u8,
+			feature_high: 0,
+			count,
+			_reserved0: 0,
+			_reserved1: [0; 4],
+			control,
+			device,
+		}
+	}
 }
 
 #[repr(C)]
@@ -328,21 +427,30 @@ struct FisPioSetup {
 	_reserved2: [u8; 2],
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 #[repr(C, align(128))]
 struct CommandTable {
 	command_fis: [u8; 64],
 	atapi_command: [u8; 16],
 	_reserved: [u8; 48],
-	prdt_entries: [PrdtEntry; PRDTL],
+	prdt_entry: [PrdtEntry; PRDTL],
 }
 
-#[derive(Debug)]
+#[bitfield]
+#[derive(Debug, Clone, Copy)]
+struct PrdtEntryBits {
+	/// Byte count *minus 1*
+	byte_count: B22,
+	reserved: B9,
+	interrupt_on_completion: bool,
+}
+
+#[derive(Copy, Clone, Debug)]
 #[repr(C)]
 struct PrdtEntry {
-	data_base_address: ,
+	data_base_address: u64, // TODO figure out type TO_PHYS
 	_reserved: u32,
-	_bits: u32,
+	bits: PrdtEntryBits,
 }
 #[derive(Debug)]
 #[repr(C)]
@@ -390,6 +498,13 @@ const _: () = {
 	assert!(size_of::<FisRegHostToDevice>() == 20);
 	assert!(size_of::<FisDmaSetup>() == 28);
 	assert!(size_of::<PrdtEntry>() == 16);
+	assert!(size_of::<CommandHeaderBits>() == 2);
+	assert!(size_of::<PrdtEntryBits>() == 4);
+	{
+		assert!(size_of::<PhysPtr<RecievedFis>>() == 8);
+		assert!(size_of::<PhysPtr<CommandList>>() == 8);
+		assert!(size_of::<PhysPtr<CommandTable>>() == 8);
+	}
 	assert!(align_of::<CommandTable>() == 128);
 };
 
@@ -423,12 +538,77 @@ pub fn setup() {
 			}
 			println!("{}", hba_memory.version);
 			let ports = hba_memory.available_ports();
-			for port in ports {
-				hba_memory.ports[port].rebase();
+			for port in &ports {
+				hba_memory.ports[*port].rebase();
 			}
+			const SECTORS: u64 = 1;
+			let mut buf = [[0; 512]; SECTORS as usize];
+			hba_memory.ports[ports[0]].read(SECTORS, &mut buf);
+			serial_println!("{:?}", buf);
 		}
 		None => {
 			serial_println!("No AHCI device, cannot access storage!");
+		}
+	}
+}
+
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, Hash)]
+struct PhysPtr<T> {
+	addr: u64,
+	phantom: PhantomData<T>,
+}
+
+impl<T> PhysPtr<T> {
+	fn new(ptr: *mut T) -> Self {
+		let virt = VirtAddr::new(ptr as usize as u64);
+
+		let table;
+		unsafe {
+			table = paging::get_offset_page_table(paging::get_current_page_table());
+		}
+		let result = table.translate_addr(virt);
+		match result {
+			Some(phys) => {
+				let phys = phys.as_u64();
+				PHYS_TO_VIRT.lock().insert(phys, virt);
+				Self {
+					addr: phys,
+					phantom: PhantomData,
+				}
+			}
+			_ => {
+				unreachable!("This should be mapped and translatable")
+			}
+		}
+	}
+}
+
+impl<T> Deref for PhysPtr<T> {
+	type Target = T;
+	fn deref(&self) -> &Self::Target {
+		let phys = self.addr;
+		let lock = PHYS_TO_VIRT.lock();
+		let option_virt = lock.get(&phys);
+		match option_virt {
+			Some(v) => unsafe { &*v.as_ptr() },
+			None => {
+				unreachable!("All physical pointers should be in the map")
+			}
+		}
+	}
+}
+
+impl<T> DerefMut for PhysPtr<T> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		let phys = self.addr;
+		let lock = PHYS_TO_VIRT.lock();
+		let option_virt = lock.get(&phys);
+		match option_virt {
+			Some(v) => unsafe { &mut *v.as_mut_ptr() },
+			None => {
+				unreachable!("All physical pointers should be in the map")
+			}
 		}
 	}
 }

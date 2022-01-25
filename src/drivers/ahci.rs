@@ -135,7 +135,7 @@ impl Port {
 				command_fis = &mut *(&mut command_table.command_fis as *mut _ as *mut FisRegHostToDevice);
 			}
 			let bits = FisRegH2DBits::new().with_command_or_control(true);
-			let command = 25;
+			let command = 0x25;
 			*command_fis = FisRegHostToDevice::new(bits, command, 0, start_sector, sector_count as u16, 1 << 6);
 
 			let mut broke = false;

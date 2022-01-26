@@ -140,7 +140,7 @@ impl Port {
 
 			let mut broke = false;
 			for _ in 0..0x100000 {
-				if self.task_file_data & 0x88 != 0 {
+				if self.task_file_data & 0x88 == 0 {
 					broke = true;
 					break;
 				}
@@ -156,15 +156,18 @@ impl Port {
 					if self.command_issue & ci == 0 {
 						break;
 					}
-					// if self.interrupt_status TODO check error
+					if self.interrupt_status & (1 << 30) != 0 {
+						panic!("Read disk error");
+						// TODO fail
+					}
 				}
 			// TODO check error again
 			} else {
-				panic!("Fail");
+				panic!("Port is hung");
 				// TODO fail
 			}
 		} else {
-			panic!("Fail");
+			panic!("No command slots");
 			// TODO fail
 		}
 	}

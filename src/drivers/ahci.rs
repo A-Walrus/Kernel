@@ -161,7 +161,10 @@ impl Port {
 						// TODO fail
 					}
 				}
-			// TODO check error again
+				if self.interrupt_status & (1 << 30) != 0 {
+					panic!("Read disk error");
+					// TODO fail
+				}
 			} else {
 				panic!("Port is hung");
 				// TODO fail

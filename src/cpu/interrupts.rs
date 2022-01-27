@@ -3,7 +3,7 @@ use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
 use pic8259::ChainedPics;
-use spin;
+use spin::Mutex;
 use x86_64::structures::idt::PageFaultErrorCode;
 
 /// Offset of the first pic in the chained pics
@@ -35,19 +35,23 @@ impl IRQ {
 }
 
 lazy_static! {
-	static ref IDT: InterruptDescriptorTable = {
+	/// Mutex wrapping the interrupt descriptor table
+	pub static ref IDT: Mutex<InterruptDescriptorTable> = {
 		let mut idt = InterruptDescriptorTable::new();
 		idt.breakpoint.set_handler_fn(breakpoint_handler);
 		idt.page_fault.set_handler_fn(page_fault_handler);
 		idt[IRQ::Keyboard.index()].set_handler_fn(keyboard_interrupt_handler);
 		idt[IRQ::Timer.index()].set_handler_fn(timer_interrupt_handler);
-		idt
+		Mutex::new(idt)
 	};
 }
 
 /// Set up interrupt descriptor table, and chained pics
 pub fn setup() {
-	IDT.load();
+	unsafe {
+		let idt = &mut *(&mut *IDT.lock() as *mut InterruptDescriptorTable);
+		idt.load();
+	}
 	unsafe {
 		let mut pics = PICS.lock();
 		pics.initialize();

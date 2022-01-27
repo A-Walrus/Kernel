@@ -1,4 +1,4 @@
-use alloc::vec::Vec;
+use alloc::{boxed::Box, vec::Vec};
 use core::{
 	fmt::{Debug, Display},
 	marker::PhantomData,
@@ -100,7 +100,9 @@ impl Port {
 
 		let mut sector_count = buf.len();
 		// Clear pending interrut bits
+		serial_println!("Interrupt Status , Before clear: {:#X}", self.interrupt_status);
 		self.interrupt_status = 0xFFFFFFFF;
+		serial_println!("Interrupt Status , After clear: {:#X}", self.interrupt_status);
 
 		let slot_option = self.find_command_slot();
 		if let Some(slot) = slot_option {
@@ -142,10 +144,13 @@ impl Port {
 			if broke {
 				let ci = 1 << slot;
 				// Issue command
+				serial_println!("Interrupt Status , Before command: {:#X}", self.interrupt_status);
 				self.command_issue = ci;
 
-				// wait for completion
+				serial_println!("Interrupt Status , After command: {:#X}", self.interrupt_status);
 
+				// wait for completion
+				let mut count = 0;
 				loop {
 					if self.command_issue & ci == 0 {
 						break;
@@ -154,7 +159,9 @@ impl Port {
 						panic!("Read disk error");
 						// TODO fail
 					}
+					count += 1;
 				}
+				serial_println!("count: {}", count);
 				if self.interrupt_status & (1 << 30) != 0 {
 					panic!("Read disk error");
 					// TODO fail
@@ -519,6 +526,10 @@ const _: () = {
 	assert!(align_of::<CommandTable>() == 128);
 };
 
+use x86_64::structures::idt::InterruptStackFrame;
+extern "x86-interrupt" fn interrupt_handler(stack_frame: InterruptStackFrame) {
+	serial_println!("Interrupt!!!!! ");
+}
 /// Setup AHCI
 pub fn setup() {
 	let functions = pci::recursive_scan();
@@ -530,6 +541,11 @@ pub fn setup() {
 			serial_println!("Found AHCI device: {:?}", function);
 			let abar = pci::get_bars(*function)[5];
 			serial_println!("ABAR: {:?}", abar);
+			let line = pci::get_interrupt(*function).line;
+
+			use crate::cpu::interrupts::IDT;
+			IDT.lock()[line.into()].set_handler_fn(interrupt_handler);
+
 			let address;
 			match abar {
 				pci::Bar::MemorySpace {

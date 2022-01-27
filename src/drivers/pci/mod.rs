@@ -188,11 +188,16 @@ fn get_secondary_bus(func: Function) -> u8 {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-struct Interrupt {
-	pin: u8,
-	line: u8,
+/// Struct describing the interrupt data in the PCI register
+pub struct Interrupt {
+	/// The interrupt pin (not sure what that means)
+	pub pin: u8,
+	/// The interrupt line (I believe that's the index IRQ)
+	pub line: u8,
 }
-fn get_interrupt(func: Function) -> Interrupt {
+
+/// Get the interrupt data for the function
+pub fn get_interrupt(func: Function) -> Interrupt {
 	let reg = pci_config_read(func, 2);
 	Interrupt {
 		pin: (reg >> 8) as u8,

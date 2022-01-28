@@ -94,6 +94,10 @@ type Sector = [u8; 512];
 
 impl Port {
 	fn read(&mut self, start_sector: u64, buf: &mut [Sector]) {
+		self.interrupt_enable = 0xFFFFFFFF;
+
+		serial_println!("{}", self.interrupt_enable);
+
 		let mut sector_count = buf.len();
 		// Clear pending interrut bits
 		self.interrupt_status = 0xFFFFFFFF;
@@ -108,25 +112,15 @@ impl Port {
 			let cfl = (size_of::<FisRegHostToDevice>() / 4) as u8;
 			bits.set_command_fis_length_checked(cfl)
 				.expect("Command fis length out of bounds");
-			command_header.prdt_length = (((sector_count - 1) >> 4) + 1) as u16;
+			command_header.prdt_length = 1 as u16;
 			let command_table;
 			unsafe {
 				command_table = &mut *command_header.command_table_base;
 				(command_table as *mut CommandTable).write_bytes(0, 1);
 			}
 
-			let mut addr = buf.as_ptr() as usize as u64;
-			for i in 0..command_header.prdt_length - 1 {
-				let entry = &mut command_table.prdt_entry[i as usize];
-				entry.data_base_address = virt_to_phys(VirtAddr::new(addr)).as_u64();
-				entry.bits.set_byte_count(8 * 1024 - 1);
-				entry.bits.set_interrupt_on_completion(true);
-				addr += 4 * 1024;
-				sector_count -= 16;
-			}
-
-			let entry = &mut command_table.prdt_entry[command_header.prdt_length as usize - 1];
-			entry.data_base_address = addr;
+			let entry = &mut command_table.prdt_entry[0];
+			entry.data_base_address = virt_to_phys(VirtAddr::new(buf.as_mut_ptr() as u64)).as_u64();
 			entry.bits.set_byte_count(((sector_count << 9) - 1) as u32);
 			entry.bits.set_interrupt_on_completion(true);
 
@@ -219,7 +213,7 @@ impl Port {
 			let command_list_base: *mut CommandList = uncached_allocate_value(CommandList(
 				[CommandHeader {
 					bits: CommandHeaderBits::new(),
-					prdt_length: 8,
+					prdt_length: PRDTL as u16,
 					prd_byte_count: 0,
 					_reserved: [0; 4],
 					command_table_base: PhysPtr::new(uncached_allocate_zeroed()),
@@ -235,17 +229,18 @@ impl Port {
 		// wait until CR is cleared
 		while self.command_and_status.contains(Status::COMMAND_LIST_RUNNING) {}
 
-		self.command_and_status
-			.insert(Status::FIS_RECEIVED_ENABLE | Status::START);
+		self.command_and_status.insert(Status::FIS_RECEIVED_ENABLE);
+		self.command_and_status.insert(Status::START);
 	}
 
 	fn stop_command(&mut self) {
 		let status = &mut self.command_and_status;
 
-		status.remove(Status::START | Status::FIS_RECEIVED_ENABLE);
+		status.remove(Status::START);
+		status.remove(Status::FIS_RECEIVED_ENABLE);
 
 		// wait until FR and CR are cleared
-		while status.contains(Status::FIS_RECEIVED_RUNNING) && status.contains(Status::COMMAND_LIST_RUNNING) {}
+		while status.contains(Status::FIS_RECEIVED_RUNNING) || status.contains(Status::COMMAND_LIST_RUNNING) {}
 	}
 }
 
@@ -372,7 +367,8 @@ struct FisRegHostToDevice {
 	lba4: u8,
 	lba5: u8,
 	feature_high: u8,
-	count: u16,
+	countl: u8,
+	counth: u8,
 	_reserved0: u8,
 	control: u8,
 	_reserved1: [u8; 4],
@@ -392,7 +388,8 @@ impl FisRegHostToDevice {
 			lba4: (lba >> 32) as u8,
 			lba5: (lba >> 40) as u8,
 			feature_high: 0,
-			count,
+			countl: count as u8,
+			counth: (count >> 8) as u8,
 			_reserved0: 0,
 			_reserved1: [0; 4],
 			control,
@@ -476,7 +473,8 @@ struct FisDmaSetup {
 #[repr(C)]
 struct FisSetDeviceBits {
 	fis_type: FisType,
-	_bits: u16,
+	_bits0: u8,
+	_bits1: u8,
 	error: u8,
 	_reserved: [u8; 4],
 }
@@ -495,11 +493,18 @@ struct RecievedFis {
 }
 
 const _: () = {
+	assert!(size_of::<FisDmaSetup>() == 28);
+	assert!(size_of::<FisPioSetup>() == 20);
+	assert!(size_of::<FisRegDeviceToHost>() == 20);
+	assert!(size_of::<FisSetDeviceBits>() == 8);
 	assert!(size_of::<Port>() == 0x80);
 	assert!(size_of::<AHCIVersion>() == 0x4);
+	assert!(size_of::<CommandTable>() == 256);
 	assert!(size_of::<Memory>() == 0x1100);
 	assert!(align_of::<CommandList>() == 1024);
+	assert!(size_of::<CommandList>() == 1024);
 	assert!(align_of::<RecievedFis>() == 256);
+	assert!(size_of::<RecievedFis>() == 256);
 	assert!(size_of::<FisRegDeviceToHost>() == 20);
 	assert!(size_of::<FisRegHostToDevice>() == 20);
 	assert!(size_of::<FisDmaSetup>() == 28);
@@ -547,10 +552,15 @@ pub fn setup() {
 			for port in &ports {
 				hba_memory.ports[*port].rebase();
 			}
-			const SECTORS: u64 = 1;
-			let mut buf = [[0; 512]; SECTORS as usize];
-			hba_memory.ports[ports[0]].read(SECTORS, &mut buf);
-			serial_println!("{:?}", buf);
+			const SECTORS: u64 = 8;
+			let mut buf = UBox::new([[5; 512]; SECTORS as usize]);
+			hba_memory.ports[ports[0]].read(0, &mut *buf);
+			for _ in 0..0x100 {
+				serial_print!(".");
+				use x86_64::instructions::hlt;
+				hlt();
+			}
+			serial_println!("{:?}", *buf);
 		}
 		None => {
 			serial_println!("No AHCI device, cannot access storage!");

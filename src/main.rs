@@ -36,7 +36,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		println!("Free RAM {} MiB", buddy::ALLOCATOR.lock().get_free_space() >> 20);
 
 		// drivers::pci::testing();
-		drivers::ahci::setup();
+		unsafe {
+			drivers::ahci::setup();
+		}
 	}
 	loop {}
 }

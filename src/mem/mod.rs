@@ -4,3 +4,5 @@ pub mod buddy;
 pub mod heap;
 /// Dealing with paging
 pub mod paging;
+/// Dealing with volatile memory
+pub mod volatile;

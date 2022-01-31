@@ -127,9 +127,9 @@ impl Port {
 			(command_table as *mut CommandTable).write_bytes(0, 1);
 
 			let entry = &mut command_table.prdt_entry[0];
-			entry
-				.data_base_address
-				.write(virt_to_phys(VirtAddr::new(buf.as_mut_ptr() as u64)).as_u64());
+			entry.data_base_address.write(PhysPtr::new(buf.as_mut_ptr()));
+
+			serial_println!("Data base address: {:#X}", entry.data_base_address.read().addr);
 			entry
 				.bits
 				.write(entry.bits.read().with_byte_count(((sector_count << 9) - 1) as u32));
@@ -186,6 +186,8 @@ impl Port {
 					panic!("Read disk error");
 					// TODO fail
 				}
+				serial_println!("{:?}", *self.fis_base_address.read());
+				serial_println!("{:?}", self.task_file_data.read());
 			} else {
 				panic!("Port is hung");
 				// TODO fail
@@ -470,7 +472,7 @@ struct PrdtEntryBits {
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
 struct PrdtEntry {
-	data_base_address: V<u64>, // TODO figure out type TO_PHYS
+	data_base_address: V<PhysPtr<Sector>>, // TODO figure out type TO_PHYS
 	_reserved: V<u32>,
 	bits: V<PrdtEntryBits>,
 }
@@ -597,6 +599,9 @@ pub unsafe fn setup() {
 			let hba_memory: &mut Memory;
 			hba_memory = &mut *(virt_addr.as_mut_ptr());
 			println!("{}", hba_memory.version.read());
+
+			hba_memory.global_host_control.write(1 << 31 | 1 << 1);
+
 			let ports = hba_memory.available_ports();
 			for port in &ports {
 				println!("{:?}", hba_memory.ports[*port].get_device_type());
@@ -615,7 +620,7 @@ pub unsafe fn setup() {
 				use x86_64::instructions::hlt;
 				hlt();
 			}
-			println!("{:?}", buf.as_ptr().read_volatile());
+			serial_println!("{:?}", *buf);
 		}
 		None => {
 			serial_println!("No AHCI device, cannot access storage!");

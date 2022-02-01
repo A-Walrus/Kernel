@@ -42,6 +42,8 @@ lazy_static! {
 		idt.page_fault.set_handler_fn(page_fault_handler);
 		idt[IRQ::Keyboard.index()].set_handler_fn(keyboard_interrupt_handler);
 		idt[IRQ::Timer.index()].set_handler_fn(timer_interrupt_handler);
+		idt.double_fault.set_handler_fn(double_fault_handler);
+		idt.invalid_tss.set_handler_fn(invalid_tss_handler);
 		Mutex::new(idt)
 	};
 }
@@ -55,7 +57,7 @@ pub fn setup() {
 	unsafe {
 		let mut pics = PICS.lock();
 		pics.initialize();
-		const MASK: u8 = 0b1111_1100;
+		const MASK: u8 = 0b1111_1000;
 		pics.write_masks(MASK, MASK);
 	};
 	x86_64::instructions::interrupts::enable();
@@ -80,6 +82,18 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
 /// Interrupt handler for breakpoint interrupts.
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 	serial_println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
+}
+
+/// Interrupt handler for double faults.
+extern "x86-interrupt" fn double_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) -> ! {
+	serial_println!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
+	loop {}
+}
+
+/// Interrupt handler for invalid tss.
+extern "x86-interrupt" fn invalid_tss_handler(stack_frame: InterruptStackFrame, error_code: u64) {
+	serial_println!("EXCEPTION: INVALID TSS\n{:#?}", stack_frame);
+	loop {}
 }
 
 /// Interrupt handler for page faults. Currenty it **does not** solve the page fault (by swapping

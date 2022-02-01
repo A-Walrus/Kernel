@@ -1,4 +1,5 @@
 use alloc::{boxed::Box, vec::Vec};
+use bitflags::bitflags;
 use core::{
 	fmt::{Debug, Display},
 	marker::PhantomData,
@@ -7,8 +8,12 @@ use core::{
 };
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
+use modular_bitfield::{bitfield, prelude::*};
 use spin::Mutex;
-use x86_64::{structures::paging::mapper::Translate, PhysAddr, VirtAddr};
+use x86_64::{
+	structures::{idt::InterruptDescriptorTable, paging::mapper::Translate},
+	PhysAddr, VirtAddr,
+};
 
 use super::pci;
 use crate::mem::{
@@ -17,14 +22,81 @@ use crate::mem::{
 	volatile::V,
 };
 
-use bitflags::bitflags;
-use modular_bitfield::{bitfield, prelude::*};
+mod fis;
+use fis::*;
 
 const PRDTL: usize = 8;
 
 lazy_static! {
 	static ref PHYS_TO_VIRT: Mutex<HashMap<u64, VirtAddr>> = Mutex::new(HashMap::new());
 }
+
+/// Setup AHCI
+pub unsafe fn setup() {
+	// Get all PCI functions
+	let functions = pci::recursive_scan();
+	// Filter the function with the Mass Media - Sata class
+	let result = functions
+		.iter()
+		.find(|func| pci::get_class_code(**func) == 0x01 && pci::get_subclass_code(**func) == 0x06);
+	match result {
+		Some(function) => {
+			serial_println!("Found AHCI device: {:?}", function);
+			let abar = pci::get_bars(*function)[5];
+			serial_println!("ABAR: {:?}", abar);
+			let interrupt = pci::get_interrupt(*function);
+			serial_println!("Interrupt: {:?}", interrupt);
+			let line = interrupt.line;
+
+			unsafe {
+				use crate::cpu::interrupts::IDT;
+				let idt = &mut *(&mut *IDT.lock() as *mut InterruptDescriptorTable);
+				idt[(40 + line).into()].set_handler_fn(interrupt_handler);
+				idt.load();
+				x86_64::instructions::interrupts::enable();
+			}
+
+			let address;
+			match abar {
+				pci::Bar::MemorySpace {
+					prefetchable: _,
+					base_address,
+				} => {
+					address = base_address;
+				}
+				_ => {
+					unreachable!()
+				}
+			}
+			let virt_addr = paging::phys_to_virt(address);
+			let hba_memory: &mut Memory;
+			hba_memory = &mut *(virt_addr.as_mut_ptr());
+			println!("{}", hba_memory.version.read());
+
+			hba_memory.global_host_control.write(1 << 31 | 1 << 1);
+
+			let ports = hba_memory.available_ports();
+			for port in &ports {
+				println!("{:?}", hba_memory.ports[*port].get_device_type());
+			}
+
+			for port in &ports {
+				serial_println!("Rebase port {}", port);
+				hba_memory.ports[*port].rebase();
+			}
+			const SECTORS: u64 = 8;
+			let mut buf = UBox::new([[5; 512]; SECTORS as usize]);
+			serial_println!("Read port 0");
+			hba_memory.ports[ports[0]].read(0, &mut *buf);
+			serial_println!("{:?}", *buf);
+		}
+		None => {
+			serial_println!("No AHCI device, cannot access storage!");
+		}
+	}
+}
+
+type Sector = [u8; 512];
 
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -90,15 +162,9 @@ struct Port {
 	vendor_specific: V<[u32; 4]>,
 }
 
-type Sector = [u8; 512];
-
 impl Port {
 	unsafe fn read(&mut self, start_sector: u64, buf: &mut [Sector]) {
-		// Enable all interrupts
-		self.interrupt_enable.write(u32::MAX);
-		serial_println!("{}", self.interrupt_enable.read());
-
-		let mut sector_count = buf.len();
+		let sector_count = buf.len();
 
 		// Clear pending interrut bits
 		serial_println!("Interrupt Status , Before clear: {:#X}", self.interrupt_status.read());
@@ -108,7 +174,6 @@ impl Port {
 		let slot_option = self.find_command_slot();
 		if let Some(slot) = slot_option {
 			let mut read = self.command_list_base.read();
-			serial_println!("{:?}", read);
 			let command_list;
 			command_list = &mut *read;
 			let command_header: &mut CommandHeader = &mut command_list.0[slot];
@@ -129,7 +194,6 @@ impl Port {
 			let entry = &mut command_table.prdt_entry[0];
 			entry.data_base_address.write(PhysPtr::new(buf.as_mut_ptr()));
 
-			serial_println!("Data base address: {:#X}", entry.data_base_address.read().addr);
 			entry
 				.bits
 				.write(entry.bits.read().with_byte_count(((sector_count << 9) - 1) as u32));
@@ -161,13 +225,10 @@ impl Port {
 				// Issue command
 				serial_println!("Interrupt Status , Before command: {:#X}", self.interrupt_status.read());
 
-				serial_println!("I write {}", ci);
+				serial_println!("Issueing command");
 				self.command_issue.write(ci);
-				for _ in 0..4 {
-					serial_println!("{}", self.command_issue.read());
-				}
 
-				serial_println!("Interrupt Status , After command: {:#X}", self.interrupt_status.read());
+				// serial_println!("Interrupt Status , After command: {:#X}", self.interrupt_status.read());
 
 				// wait for completion
 				let mut count = 0;
@@ -181,13 +242,10 @@ impl Port {
 					}
 					count += 1;
 				}
-				serial_println!("count: {}", count);
 				if self.interrupt_status.read() & (1 << 30) != 0 {
 					panic!("Read disk error");
 					// TODO fail
 				}
-				serial_println!("{:?}", *self.fis_base_address.read());
-				serial_println!("{:?}", self.task_file_data.read());
 			} else {
 				panic!("Port is hung");
 				// TODO fail
@@ -257,6 +315,10 @@ impl Port {
 		self.command_list_base.write(PhysPtr::new(command_list_base));
 		// serial_println!("read after write {:?}", self.command_list_base.read());
 
+		// Clear interrupts
+		self.interrupt_status.write(u32::MAX);
+		// Enable interrupt
+		self.interrupt_enable.write(1);
 		self.start_command();
 	}
 
@@ -352,105 +414,6 @@ struct CommandHeader {
 #[derive(Debug, Copy, Clone)]
 struct CommandList([CommandHeader; 32]);
 
-#[allow(dead_code)]
-#[derive(Debug, Copy, Clone)]
-#[repr(u8)]
-enum FisType {
-	RegHostToDevice = 0x27,
-	RegDeviceToHost = 0x34,
-	DmaActivate = 0x39,
-	DmaSetup = 0x41,
-	Data = 0x46,
-	Bist = 0x58,
-	PioSetup = 0x5F,
-	DeviceBits = 0xA1,
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-struct FisRegDeviceToHost {
-	fis_type: FisType,
-	_bits: u8,
-	status: u8,
-	error: u8,
-	lba0: u8,
-	lba1: u8,
-	lba2: u8,
-	device: u8,
-	lba3: u8,
-	lba4: u8,
-	lba5: u8,
-	_reserved0: u8,
-	count_low: u8,
-	count_hight: u8,
-	_reserved1: [u8; 2],
-	_reserved2: [u8; 4],
-}
-
-#[bitfield]
-#[derive(Debug)]
-struct FisRegH2DBits {
-	port_multiplier_port: B4,
-	reserved: B3,
-	/// true: command, false: control
-	command_or_control: bool,
-}
-
-#[repr(C)]
-#[derive(Debug)]
-struct FisRegHostToDevice {
-	fis_type: FisType,
-	bits: FisRegH2DBits,
-	command: u8,
-	feature_low: u8,
-	lba0: u8,
-	lba1: u8,
-	lba2: u8,
-	device: u8,
-	lba3: u8,
-	lba4: u8,
-	lba5: u8,
-	feature_high: u8,
-	countl: u8,
-	counth: u8,
-	_reserved0: u8,
-	control: u8,
-	_reserved1: [u8; 4],
-}
-
-impl FisRegHostToDevice {
-	fn new(bits: FisRegH2DBits, command: u8, control: u8, lba: u64, count: u16, device: u8) -> Self {
-		Self {
-			fis_type: FisType::RegHostToDevice,
-			bits,
-			command,
-			feature_low: 0,
-			lba0: lba as u8,
-			lba1: (lba >> 8) as u8,
-			lba2: (lba >> 16) as u8,
-			lba3: (lba >> 24) as u8,
-			lba4: (lba >> 32) as u8,
-			lba5: (lba >> 40) as u8,
-			feature_high: 0,
-			countl: count as u8,
-			counth: (count >> 8) as u8,
-			_reserved0: 0,
-			_reserved1: [0; 4],
-			control,
-			device,
-		}
-	}
-}
-
-#[repr(C)]
-#[derive(Debug)]
-struct FisData {
-	fis_type: FisType,
-	_bits: u8,
-	_rserved0: [u8; 2],
-	data: (), // TODO figure out what type this should be
-}
-
 #[derive(Copy, Clone, Debug)]
 #[repr(C, align(128))]
 struct CommandTable {
@@ -472,85 +435,28 @@ struct PrdtEntryBits {
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
 struct PrdtEntry {
-	data_base_address: V<PhysPtr<Sector>>, // TODO figure out type TO_PHYS
+	data_base_address: V<PhysPtr<Sector>>,
 	_reserved: V<u32>,
 	bits: V<PrdtEntryBits>,
 }
 
-#[derive(Debug, Copy, Clone)]
-#[repr(C)]
-struct FisDmaSetup {
-	fis_type: FisType,
-	_bits: u8,
-	_reserved0: [u8; 2],
-	dma_buffer_id_low: u32,
-	dma_buffer_id_high: u32,
-	_reserved1: u32,
-	dma_buffer_offset: u32,
-	transfer_count: u32,
-	_reserved2: [u8; 4],
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-struct FisPioSetup {
-	fis_type: FisType,
-	_bits: u8,
-	status: u8,
-	error: u8,
-	lba0: u8,
-	lba1: u8,
-	lba2: u8,
-	device: u8,
-	lba3: u8,
-	lba4: u8,
-	lba5: u8,
-	_reserved0: u8,
-	count_low: u8,
-	count_high: u8,
-	_reserved1: u8,
-	e_status: u8,
-	transfer_count: u16,
-	_reserved2: [u8; 2],
-}
-#[derive(Debug, Copy, Clone)]
-#[repr(C)]
-struct FisSetDeviceBits {
-	fis_type: FisType,
-	_bits0: u8,
-	_bits1: u8,
-	error: u8,
-	_reserved: [u8; 4],
-}
-#[derive(Debug, Copy, Clone)]
-#[repr(C, align(256))]
-struct RecievedFis {
-	dma_setup: FisDmaSetup,
-	_pad0: [u8; 4],
-	pio_setup: FisPioSetup,
-	_pad1: [u8; 12],
-	d2h_register: FisRegDeviceToHost,
-	_pad2: [u8; 4],
-	set_device_bits: FisSetDeviceBits,
-	unknown_fis: [u8; 64],
-	_reserved: [u8; 0x100 - 0xA0],
-}
-
 const _: () = {
+	// Assert that the sizes and alignments of the types are correct
 	assert!(size_of::<FisDmaSetup>() == 28);
 	assert!(size_of::<FisPioSetup>() == 20);
 	assert!(size_of::<FisRegDeviceToHost>() == 20);
 	assert!(size_of::<FisSetDeviceBits>() == 8);
+	assert!(size_of::<FisRegDeviceToHost>() == 20);
+	assert!(size_of::<FisRegHostToDevice>() == 20);
 	assert!(size_of::<Port>() == 0x80);
 	assert!(size_of::<AHCIVersion>() == 0x4);
 	assert!(size_of::<CommandTable>() == 256);
+	assert!(align_of::<CommandTable>() == 128);
 	assert!(size_of::<Memory>() == 0x1100);
 	assert!(align_of::<CommandList>() == 1024);
 	assert!(size_of::<CommandList>() == 1024);
 	assert!(align_of::<RecievedFis>() == 256);
 	assert!(size_of::<RecievedFis>() == 256);
-	assert!(size_of::<FisRegDeviceToHost>() == 20);
-	assert!(size_of::<FisRegHostToDevice>() == 20);
 	assert!(size_of::<FisDmaSetup>() == 28);
 	assert!(size_of::<PrdtEntry>() == 16);
 	assert!(size_of::<CommandHeaderBits>() == 2);
@@ -560,71 +466,15 @@ const _: () = {
 		assert!(size_of::<PhysPtr<CommandList>>() == 8);
 		assert!(size_of::<PhysPtr<CommandTable>>() == 8);
 	}
-	assert!(align_of::<CommandTable>() == 128);
 };
-
+use crate::cpu::interrupts::PICS;
 use x86_64::structures::idt::InterruptStackFrame;
-extern "x86-interrupt" fn interrupt_handler(stack_frame: InterruptStackFrame) {
-	serial_println!("Interrupt!!!!! ");
-}
-/// Setup AHCI
-pub unsafe fn setup() {
-	let functions = pci::recursive_scan();
-	let res = functions
-		.iter()
-		.find(|func| pci::get_class_code(**func) == 0x01 && pci::get_subclass_code(**func) == 0x06);
-	match res {
-		Some(function) => {
-			serial_println!("Found AHCI device: {:?}", function);
-			let abar = pci::get_bars(*function)[5];
-			serial_println!("ABAR: {:?}", abar);
-			let line = pci::get_interrupt(*function).line;
-
-			use crate::cpu::interrupts::IDT;
-			IDT.lock()[line.into()].set_handler_fn(interrupt_handler);
-
-			let address;
-			match abar {
-				pci::Bar::MemorySpace {
-					prefetchable: _,
-					base_address,
-				} => {
-					address = base_address;
-				}
-				_ => {
-					unreachable!()
-				}
-			}
-			let virt_addr = paging::phys_to_virt(address);
-			let hba_memory: &mut Memory;
-			hba_memory = &mut *(virt_addr.as_mut_ptr());
-			println!("{}", hba_memory.version.read());
-
-			hba_memory.global_host_control.write(1 << 31 | 1 << 1);
-
-			let ports = hba_memory.available_ports();
-			for port in &ports {
-				println!("{:?}", hba_memory.ports[*port].get_device_type());
-			}
-
-			for port in &ports {
-				serial_println!("Rebase port {}", port);
-				hba_memory.ports[*port].rebase();
-			}
-			const SECTORS: u64 = 8;
-			let mut buf = UBox::new([[5; 512]; SECTORS as usize]);
-			serial_println!("Read port 0");
-			hba_memory.ports[ports[0]].read(0, &mut *buf);
-			for _ in 0..0x100 {
-				print!(".");
-				use x86_64::instructions::hlt;
-				hlt();
-			}
-			serial_println!("{:?}", *buf);
-		}
-		None => {
-			serial_println!("No AHCI device, cannot access storage!");
-		}
+extern "x86-interrupt" fn interrupt_handler(_stack_frame: InterruptStackFrame) {
+	serial_println!("-------------------------------Interrupt-------------------------");
+	// loop {}
+	unsafe {
+		// TODO make this number depend on the PCI line register
+		PICS.lock().notify_end_of_interrupt(42);
 	}
 }
 
@@ -635,6 +485,7 @@ struct PhysPtr<T> {
 	phantom: PhantomData<T>,
 }
 
+// TODO probably replace this with a different way to solve the physical - virtual issue.
 impl<T> PhysPtr<T> {
 	fn new(ptr: *mut T) -> Self {
 		let virt = VirtAddr::new(ptr as usize as u64);

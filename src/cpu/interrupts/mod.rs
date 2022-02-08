@@ -1,4 +1,4 @@
-use crate::{mem::volatile::V, print, serial_println};
+use crate::{print, serial_println};
 use alloc::vec::Vec;
 use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
@@ -33,7 +33,7 @@ lazy_static! {
 		set_irq_handlers(&mut idt);
 
 		register_callback(0,timer_interrupt_handler);
-		register_callback(1,timer_interrupt_handler);
+		register_callback(1,keyboard_interrupt_handler);
 
 		Mutex::new(idt)
 	};
@@ -58,6 +58,7 @@ const INIT: Option<Vec<fn(&InterruptStackFrame)>> = None;
 static CALLBACKS: Mutex<[Option<Vec<fn(&InterruptStackFrame)>>; IRQS]> = Mutex::new([INIT; IRQS]);
 
 fn irq_handler(stack_frame: InterruptStackFrame, irq: u8) {
+	// serial_println!("Handling irq: {}", irq);
 	match &CALLBACKS.lock()[irq as usize] {
 		None => {}
 		Some(vec) => {
@@ -67,11 +68,14 @@ fn irq_handler(stack_frame: InterruptStackFrame, irq: u8) {
 		}
 	}
 	unsafe {
-		PICS.lock().notify_end_of_interrupt(irq);
+		PICS.lock().notify_end_of_interrupt(PIC_1_OFFSET + irq);
 	}
 }
 
-fn register_callback(irq: u8, callback: fn(&InterruptStackFrame)) {
+/// Register a delegate function to be called when the interrupt with the given irq happens. You
+/// can register multiple functions on the same irq, and they will be called in the order that they
+/// are registered.
+pub fn register_callback(irq: u8, callback: fn(&InterruptStackFrame)) {
 	let callbacks = &mut CALLBACKS.lock();
 	match &mut callbacks[irq as usize] {
 		None => callbacks[irq as usize] = Some(vec![callback]),

@@ -19,25 +19,19 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		gdt::setup();
 		paging::setup();
 		buddy::setup(&boot_info.memory_regions);
-
-		let len = buffer::calc_real_length(framebuffer);
-		heap::setup(len);
+		heap::setup(buffer::calc_real_length(framebuffer));
 		interrupts::setup();
 		serial_println!("Setup complete!");
 
 		let screen = buffer::Screen::new_from_framebuffer(framebuffer);
-
 		let term = buffer::Terminal::new(screen);
-
 		unsafe {
 			buffer::TERM = Some(term);
 		}
-		println!("Free RAM {} MiB", buddy::ALLOCATOR.lock().get_free_space() >> 20);
 
-		// drivers::pci::testing();
-		unsafe {
-			drivers::ahci::setup();
-		}
+		// unsafe {
+		// 	drivers::ahci::setup();
+		// }
 	}
 	loop {}
 }

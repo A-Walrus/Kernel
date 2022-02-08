@@ -48,15 +48,8 @@ pub unsafe fn setup() {
 			serial_println!("ABAR: {:?}", abar);
 			let interrupt = pci::get_interrupt(*function);
 			serial_println!("Interrupt: {:?}", interrupt);
-			let line = interrupt.line;
-
-			unsafe {
-				use crate::cpu::interrupts::IDT;
-				let idt = &mut *(&mut *IDT.lock() as *mut InterruptDescriptorTable);
-				idt[(40 + line).into()].set_handler_fn(interrupt_handler);
-				idt.load();
-				x86_64::instructions::interrupts::enable();
-			}
+			use crate::cpu::interrupts::register_callback;
+			register_callback(8 + interrupt.line, interrupt_handler);
 
 			let address;
 			match abar {
@@ -469,14 +462,10 @@ const _: () = {
 		assert!(size_of::<PhysPtr<CommandTable>>() == 8);
 	}
 };
-use crate::cpu::interrupts::PICS;
+
 use x86_64::structures::idt::InterruptStackFrame;
-extern "x86-interrupt" fn interrupt_handler(_stack_frame: InterruptStackFrame) {
-	serial_println!("-------------------------------Interrupt-------------------------");
-	unsafe {
-		// TODO make this number depend on the PCI line register
-		PICS.lock().notify_end_of_interrupt(42);
-	}
+fn interrupt_handler(_stack_frame: &InterruptStackFrame) {
+	serial_println!("Caught interrupt from ahci!");
 }
 
 #[repr(transparent)]

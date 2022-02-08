@@ -25,6 +25,8 @@ use crate::mem::{
 mod fis;
 use fis::*;
 
+mod disk;
+
 const PRDTL: usize = 8;
 
 lazy_static! {
@@ -471,7 +473,6 @@ use crate::cpu::interrupts::PICS;
 use x86_64::structures::idt::InterruptStackFrame;
 extern "x86-interrupt" fn interrupt_handler(_stack_frame: InterruptStackFrame) {
 	serial_println!("-------------------------------Interrupt-------------------------");
-	// loop {}
 	unsafe {
 		// TODO make this number depend on the PCI line register
 		PICS.lock().notify_end_of_interrupt(42);

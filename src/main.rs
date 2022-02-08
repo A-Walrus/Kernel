@@ -17,13 +17,12 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	if let Some(framebuffer) = boot_info.framebuffer.as_mut() {
 		gdt::setup();
-		interrupts::setup();
 		paging::setup();
 		buddy::setup(&boot_info.memory_regions);
 
 		let len = buffer::calc_real_length(framebuffer);
-
 		heap::setup(len);
+		interrupts::setup();
 		serial_println!("Setup complete!");
 
 		let screen = buffer::Screen::new_from_framebuffer(framebuffer);

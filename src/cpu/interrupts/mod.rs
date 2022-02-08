@@ -1,4 +1,5 @@
-use crate::serial_println;
+use crate::{mem::volatile::V, print, serial_println};
+use alloc::vec::Vec;
 use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
@@ -11,28 +12,13 @@ pub const PIC_1_OFFSET: u8 = 32;
 /// Offset of the second pic in the chained pics
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 
+const IRQS: usize = 16;
+
 /// Mutex wrapping chained pics. This is the interface for communicating with the pics.
 pub static PICS: spin::Mutex<ChainedPics> = spin::Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
 
-#[derive(Copy, Clone)]
-#[repr(u8)]
-/// Interrupt request type/id.
-enum IRQ {
-	Timer = 0,
-	Keyboard = 1,
-}
-
-impl IRQ {
-	/// Convert to [u8] index into IDT
-	fn as_u8(&self) -> u8 {
-		*self as u8 + PIC_1_OFFSET
-	}
-
-	/// Convert to [usize] index into IDT
-	fn index(&self) -> usize {
-		self.as_u8() as usize
-	}
-}
+mod codegen;
+use codegen::*;
 
 lazy_static! {
 	/// Mutex wrapping the interrupt descriptor table
@@ -40,10 +26,15 @@ lazy_static! {
 		let mut idt = InterruptDescriptorTable::new();
 		idt.breakpoint.set_handler_fn(breakpoint_handler);
 		idt.page_fault.set_handler_fn(page_fault_handler);
-		idt[IRQ::Keyboard.index()].set_handler_fn(keyboard_interrupt_handler);
-		idt[IRQ::Timer.index()].set_handler_fn(timer_interrupt_handler);
+		// idt[IRQ::Keyboard.index()].set_handler_fn(keyboard_interrupt_handler);
+		// idt[IRQ::Timer.index()].set_handler_fn(timer_interrupt_handler);
 		idt.double_fault.set_handler_fn(double_fault_handler);
 		idt.invalid_tss.set_handler_fn(invalid_tss_handler);
+		set_irq_handlers(&mut idt);
+
+		register_callback(0,timer_interrupt_handler);
+		register_callback(1,timer_interrupt_handler);
+
 		Mutex::new(idt)
 	};
 }
@@ -63,21 +54,54 @@ pub fn setup() {
 	x86_64::instructions::interrupts::enable();
 }
 
-/// Interrupt handler for timer interrupts.
-extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+const INIT: Option<Vec<fn(&InterruptStackFrame)>> = None;
+static CALLBACKS: Mutex<[Option<Vec<fn(&InterruptStackFrame)>>; IRQS]> = Mutex::new([INIT; IRQS]);
+
+fn irq_handler(stack_frame: InterruptStackFrame, irq: u8) {
+	match &CALLBACKS.lock()[irq as usize] {
+		None => {}
+		Some(vec) => {
+			for callback in vec {
+				callback(&stack_frame);
+			}
+		}
+	}
 	unsafe {
-		PICS.lock().notify_end_of_interrupt(IRQ::Timer.as_u8());
+		PICS.lock().notify_end_of_interrupt(irq);
 	}
 }
 
-/// Interupt handler for keyboard interrupts.
-extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-	use crate::io::keyboard;
-	keyboard::read_input();
-	unsafe {
-		PICS.lock().notify_end_of_interrupt(IRQ::Keyboard.as_u8());
+fn register_callback(irq: u8, callback: fn(&InterruptStackFrame)) {
+	let callbacks = &mut CALLBACKS.lock();
+	match &mut callbacks[irq as usize] {
+		None => callbacks[irq as usize] = Some(vec![callback]),
+		Some(vec) => vec.push(callback),
 	}
 }
+
+fn timer_interrupt_handler(_stack_frame: &InterruptStackFrame) {
+	print!(".");
+}
+fn keyboard_interrupt_handler(_stack_frame: &InterruptStackFrame) {
+	use crate::io::keyboard;
+	keyboard::read_input();
+}
+
+// /// Interrupt handler for timer interrupts.
+// extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+// 	unsafe {
+// 		PICS.lock().notify_end_of_interrupt(IRQ::Timer.as_u8());
+// 	}
+// }
+
+// /// Interupt handler for keyboard interrupts.
+// extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
+// 	use crate::io::keyboard;
+// 	keyboard::read_input();
+// 	unsafe {
+// 		PICS.lock().notify_end_of_interrupt(IRQ::Keyboard.as_u8());
+// 	}
+// }
 
 /// Interrupt handler for breakpoint interrupts.
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {

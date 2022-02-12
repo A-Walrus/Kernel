@@ -1,4 +1,4 @@
-use crate::{print, serial_println};
+use crate::serial_println;
 use alloc::vec::Vec;
 use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
@@ -95,13 +95,13 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 }
 
 /// Interrupt handler for double faults.
-extern "x86-interrupt" fn double_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) -> ! {
+extern "x86-interrupt" fn double_fault_handler(stack_frame: InterruptStackFrame, _error_code: u64) -> ! {
 	serial_println!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
 	loop {}
 }
 
 /// Interrupt handler for invalid tss.
-extern "x86-interrupt" fn invalid_tss_handler(stack_frame: InterruptStackFrame, error_code: u64) {
+extern "x86-interrupt" fn invalid_tss_handler(stack_frame: InterruptStackFrame, _error_code: u64) {
 	serial_println!("EXCEPTION: INVALID TSS\n{:#?}", stack_frame);
 	loop {}
 }

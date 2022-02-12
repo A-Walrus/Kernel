@@ -5,10 +5,9 @@ extern crate alloc;
 use bootloader::{entry_point, BootInfo};
 use kernel::{
 	cpu::{gdt, interrupts},
-	drivers,
 	io::buffer,
 	mem::{buddy, heap, paging},
-	println, serial_println,
+	serial_println,
 };
 
 entry_point!(kernel_main);
@@ -27,10 +26,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		let term = buffer::Terminal::new(screen);
 		unsafe {
 			buffer::TERM = Some(term);
-		}
-
-		unsafe {
-			drivers::ahci::setup();
 		}
 	}
 	loop {}

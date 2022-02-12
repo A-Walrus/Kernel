@@ -19,12 +19,12 @@ x86_64="*" # dealing with x86 (GDT,IDT,paging...)
 pic8259 = "*" # dealing with legacy x86 pic
 lazy_static = {version = "1.0",features = ["spin_no_std"]} # safe interface to mutable statics
 spin = "0.5.2" # for lazy_static
-uart_16550 = "*" # ports for serial, keyboard... 
+uart_16550 = "*" # ports for serial
 pc-keyboard = "0.5.0"
 linked_list_allocator = {version="0.9.1", features =["default","alloc_ref","use_spin"]}
 bitflags="*"
 modular-bitfield="*"
-hashbrown="*"
+hashbrown="*" # no-std hashmap/hashtable
 
 # config for bootloader
 [package.metadata.bootloader]

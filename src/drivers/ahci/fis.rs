@@ -1,5 +1,3 @@
-use crate::mem::volatile::V;
-use bitflags::bitflags;
 use modular_bitfield::{bitfield, prelude::*};
 
 #[derive(Debug, Copy, Clone)]

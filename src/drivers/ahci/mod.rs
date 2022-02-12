@@ -10,15 +10,12 @@ use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use modular_bitfield::{bitfield, prelude::*};
 use spin::Mutex;
-use x86_64::{
-	structures::{idt::InterruptDescriptorTable, paging::mapper::Translate},
-	PhysAddr, VirtAddr,
-};
+use x86_64::{structures::paging::mapper::Translate, VirtAddr};
 
 use super::pci;
 use crate::mem::{
 	heap::{uncached_allocate_value, uncached_allocate_zeroed, UBox},
-	paging::{self},
+	paging,
 	volatile::V,
 };
 
@@ -34,8 +31,14 @@ lazy_static! {
 	static ref PHYS_TO_VIRT: Mutex<HashMap<u64, VirtAddr>> = Mutex::new(HashMap::new());
 }
 
+/// Error when trying to find a disk through AHCI
+pub enum AhciError {
+	/// There is no AHCI device on the PCI
+	NoAhciDevice,
+}
+
 /// Setup AHCI
-pub unsafe fn setup() {
+pub unsafe fn get_disk() -> Result<Box<dyn BlockDevice>, AhciError> {
 	// Get all PCI functions
 	let functions = pci::recursive_scan();
 	// Filter the function with the Mass Media - Sata class
@@ -80,10 +83,9 @@ pub unsafe fn setup() {
 				}
 			}
 			let disk = disk.unwrap();
+			Ok(Box::new(disk))
 		}
-		None => {
-			serial_println!("No AHCI device, cannot access storage!");
-		}
+		None => Err(AhciError::NoAhciDevice),
 	}
 }
 
@@ -307,7 +309,7 @@ impl Port {
 			);
 		})?;
 
-		serial_println!("{:?}", buf);
+		// serial_println!("{:?}", buf);
 
 		Ok(())
 	}

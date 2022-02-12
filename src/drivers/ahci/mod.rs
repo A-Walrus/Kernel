@@ -18,7 +18,7 @@ use x86_64::{
 use super::pci;
 use crate::mem::{
 	heap::{uncached_allocate_value, uncached_allocate_zeroed, UBox},
-	paging::{self, virt_to_phys},
+	paging::{self},
 	volatile::V,
 };
 
@@ -26,6 +26,7 @@ mod fis;
 use fis::*;
 
 mod disk;
+use disk::*;
 
 const PRDTL: usize = 8;
 
@@ -66,24 +67,19 @@ pub unsafe fn setup() {
 			let virt_addr = paging::phys_to_virt(address);
 			let hba_memory: &mut Memory;
 			hba_memory = &mut *(virt_addr.as_mut_ptr());
-			println!("{}", hba_memory.version.read());
+			println!("AHCI Version: {}", hba_memory.version.read());
 
 			hba_memory.global_host_control.write(1 << 31 | 1 << 1);
 
+			let mut disk = None;
 			let ports = hba_memory.available_ports();
-			for port in &ports {
-				println!("{:?}", hba_memory.ports[*port].get_device_type());
+			for port in ports {
+				if hba_memory.ports[port].get_device_type() == DeviceType::Sata {
+					disk = Some(AtaDisk::new(&mut hba_memory.ports[port]));
+					break;
+				}
 			}
-
-			for port in &ports {
-				serial_println!("Rebase port {}", port);
-				hba_memory.ports[*port].rebase();
-			}
-			const SECTORS: u64 = 8;
-			let mut buf = UBox::new([[5; 512]; SECTORS as usize]);
-			serial_println!("Read port 0");
-			hba_memory.ports[ports[0]].read(0, &mut *buf);
-			serial_println!("{:?}", *buf);
+			let disk = disk.unwrap();
 		}
 		None => {
 			serial_println!("No AHCI device, cannot access storage!");
@@ -116,7 +112,7 @@ impl Debug for AHCIVersion {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum DeviceType {
 	Sata,
 	Semb,
@@ -137,7 +133,8 @@ bitflags! {
 
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
-struct Port {
+/// Struct represnting an AHCI port, one of 32 in the array within the area pointed to by ABAR
+pub struct Port {
 	command_list_base: V<PhysPtr<CommandList>>,
 	fis_base_address: V<PhysPtr<RecievedFis>>,
 	interrupt_status: V<u32>,
@@ -157,109 +154,235 @@ struct Port {
 	vendor_specific: V<[u32; 4]>,
 }
 
-impl Port {
-	unsafe fn read(&mut self, start_sector: u64, buf: &mut [Sector]) {
-		let sector_count = buf.len();
+struct IdentifyData {
+	_reserved0: [u16; 100],
+	sector_count: usize,
+}
 
-		// Clear pending interrut bits
-		serial_println!("Interrupt Status , Before clear: {:#X}", self.interrupt_status.read());
-		self.interrupt_status.write(u32::MAX);
-		serial_println!("Interrupt Status , After clear: {:#X}", self.interrupt_status.read());
-
-		let slot_option = self.find_command_slot();
-		if let Some(slot) = slot_option {
-			let mut read = self.command_list_base.read();
-			let command_list;
-			command_list = &mut *read;
-			let command_header: &mut CommandHeader = &mut command_list.0[slot];
-			let bits = &mut command_header.bits;
-			bits.write(bits.read().with_write(false));
-			let cfl = (size_of::<FisRegHostToDevice>() / 4) as u8;
-			bits.write(
-				bits.read()
-					.with_command_fis_length_checked(cfl)
-					.expect("Command fis length out of bounds"),
-			);
-			command_header.prdt_length.write(1 as u16);
-			let mut read = command_header.command_table_base.read();
-			let command_table;
-			command_table = &mut *read;
-			(command_table as *mut CommandTable).write_bytes(0, 1);
-
-			let entry = &mut command_table.prdt_entry[0];
-			entry.data_base_address.write(PhysPtr::new(buf.as_mut_ptr()));
-
-			entry
-				.bits
-				.write(entry.bits.read().with_byte_count(((sector_count << 9) - 1) as u32));
-			entry.bits.write(entry.bits.read().with_interrupt_on_completion(true));
-
-			let command_fis;
-			command_fis = &mut command_table.command_fis as *mut _ as *mut FisRegHostToDevice;
-			let bits = FisRegH2DBits::new().with_command_or_control(true);
-			let command = 0x25;
-
-			command_fis.write_volatile(FisRegHostToDevice::new(
-				bits,
-				command,
-				0,
-				start_sector,
-				sector_count as u16,
-				1 << 6,
-			));
-
-			let mut broke = false;
-			for _ in 0..0x100000 {
-				if self.task_file_data.read() & 0x88 == 0 {
-					broke = true;
-					break;
-				}
-			}
-			if broke {
-				let ci = 1 << slot;
-				// Issue command
-				serial_println!("Interrupt Status , Before command: {:#X}", self.interrupt_status.read());
-
-				serial_println!("Issueing command");
-				self.command_issue.write(ci);
-
-				// serial_println!("Interrupt Status , After command: {:#X}", self.interrupt_status.read());
-
-				// wait for completion
-				let mut count = 0;
-				loop {
-					if self.command_issue.read() & ci == 0 {
-						break;
-					}
-					if self.interrupt_status.read() & (1 << 30) != 0 {
-						panic!("Read disk error");
-						// TODO fail
-					}
-					count += 1;
-				}
-				if self.interrupt_status.read() & (1 << 30) != 0 {
-					panic!("Read disk error");
-					// TODO fail
-				}
-			} else {
-				panic!("Port is hung");
-				// TODO fail
-			}
-		} else {
-			panic!("No command slots");
-			// TODO fail
+struct DiskData {
+	sector_count: usize,
+}
+impl DiskData {
+	fn new(identify: &mut IdentifyData) -> Self {
+		Self {
+			sector_count: identify.sector_count,
 		}
 	}
+}
 
-	unsafe fn find_command_slot(&self) -> Option<usize> {
+#[derive(Debug)]
+enum AtaError {
+	NoCommandSlots,
+	InvalidSectorCount,
+}
+use AtaError::*;
+
+impl Port {
+	// unsafe fn read(&mut self, start_sector: u64, buf: &mut [Sector]) {
+	// 	let sector_count = buf.len();
+
+	// 	// Clear pending interrut bits
+	// 	self.interrupt_status.write(u32::MAX);
+
+	// 	let slot_option = self.find_command_slot();
+	// 	if let Some(slot) = slot_option {
+	// 		let mut read = self.command_list_base.read();
+	// 		let command_list;
+	// 		command_list = &mut *read;
+	// 		let command_header: &mut CommandHeader = &mut command_list.0[slot];
+	// 		let bits = &mut command_header.bits;
+	// 		bits.write(bits.read().with_write(false));
+	// 		let cfl = (size_of::<FisRegHostToDevice>() / 4) as u8;
+	// 		bits.write(
+	// 			bits.read()
+	// 				.with_command_fis_length_checked(cfl)
+	// 				.expect("Command fis length out of bounds"),
+	// 		);
+	// 		command_header.prdt_length.write(1 as u16);
+	// 		let mut read = command_header.command_table_base.read();
+	// 		let command_table;
+	// 		command_table = &mut *read;
+	// 		(command_table as *mut CommandTable).write_bytes(0, 1);
+
+	// 		let entry = &mut command_table.prdt_entry[0];
+	// 		entry.data_base_address.write(PhysPtr::new(buf.as_mut_ptr()));
+
+	// 		entry
+	// 			.bits
+	// 			.write(entry.bits.read().with_byte_count(((sector_count << 9) - 1) as u32));
+	// 		entry.bits.write(entry.bits.read().with_interrupt_on_completion(true));
+
+	// 		let command_fis;
+	// 		command_fis = &mut command_table.command_fis as *mut _ as *mut FisRegHostToDevice;
+	// 		let bits = FisRegH2DBits::new().with_command_or_control(true);
+	// 		let command = 0x25;
+
+	// 		command_fis.write_volatile(FisRegHostToDevice::new(
+	// 			bits,
+	// 			command,
+	// 			0,
+	// 			start_sector,
+	// 			sector_count as u16,
+	// 			1 << 6,
+	// 		));
+
+	// 		let mut broke = false;
+	// 		for _ in 0..0x10000 {
+	// 			if self.task_file_data.read() & 0x88 == 0 {
+	// 				broke = true;
+	// 				break;
+	// 			}
+	// 		}
+	// 		if broke {
+	// 			let ci = 1 << slot;
+	// 			// Issue command
+
+	// 			self.command_issue.write(ci);
+
+	// 			// wait for completion
+	// 			let mut count = 0;
+	// 			loop {
+	// 				if self.command_issue.read() & ci == 0 {
+	// 					break;
+	// 				}
+	// 				if self.interrupt_status.read() & (1 << 30) != 0 {
+	// 					panic!("Read disk error");
+	// 					// TODO fail gracefully
+	// 				}
+	// 				count += 1;
+	// 			}
+	// 			if self.interrupt_status.read() & (1 << 30) != 0 {
+	// 				panic!("Read disk error");
+	// 				// TODO fail gracefully
+	// 			}
+	// 		} else {
+	// 			panic!("Port is hung");
+	// 			// TODO fail gracefully
+	// 		}
+	// 	} else {
+	// 		panic!("No command slots");
+	// 		// TODO fail gracefully
+	// 	}
+	// }
+
+	unsafe fn ata_read(&mut self, start_sector: u64, buf: &mut [Sector]) -> Result<(), AtaError> {
+		let count = buf.len();
+		if count == 0 || count >= 256 {
+			return Err(AtaError::InvalidSectorCount);
+		}
+		let sector_count = count as u16;
+		self.ata_start(|cmdheader, cmdfis, prdt_entries| {
+			cmdheader.prdt_length.write(1);
+			let entry = &mut prdt_entries[0];
+
+			let phys_ptr = PhysPtr::new((buf).as_mut_ptr());
+
+			entry.data_base_address.write(phys_ptr);
+
+			entry.bits.write(
+				entry
+					.bits
+					.read()
+					.with_byte_count(((sector_count as u32) << 9) - 1)
+					.with_interrupt_on_completion(true),
+			);
+
+			*cmdfis = FisRegHostToDevice::new(
+				FisRegH2DBits::new().with_command_or_control(true),
+				0x25,
+				0,
+				start_sector,
+				sector_count,
+				1 << 6,
+			);
+		})?;
+
+		serial_println!("{:?}", buf);
+
+		Ok(())
+	}
+
+	unsafe fn ata_identify(&mut self) -> Result<DiskData, AtaError> {
+		let mut buffer = UBox::new([[0; 512]; 1]);
+
+		self.ata_start(|cmdheader, cmdfis, prdt_entries| {
+			cmdheader.prdt_length.write(1);
+			let entry = &mut prdt_entries[0];
+
+			let phys_ptr = PhysPtr::new((&mut *buffer).as_mut_ptr());
+
+			entry.data_base_address.write(phys_ptr);
+
+			entry.bits.write(entry.bits.read().with_byte_count(512 | 1));
+
+			*cmdfis = FisRegHostToDevice::new(FisRegH2DBits::new().with_command_or_control(true), 0xEC, 0, 0, 1, 0);
+		})?;
+
+		let data: &mut IdentifyData = &mut *(buffer.as_mut_ptr() as *mut Sector as *mut IdentifyData);
+		Ok(DiskData::new(data))
+	}
+
+	unsafe fn ata_start<F>(&mut self, callback: F) -> Result<(), AtaError>
+	where
+		F: FnOnce(&mut CommandHeader, &mut FisRegHostToDevice, &mut [PrdtEntry; PRDTL]),
+	{
+		// Clear pending interrut bits
+		self.interrupt_status.write(u32::MAX);
+
+		let mut read = self.command_list_base.read();
+		let command_list;
+		command_list = &mut *read;
+
+		// Try to find free command slot
+		let slot = self.find_command_slot()?;
+		let command_header = &mut command_list.0[slot];
+
+		// Set command fis length
+		{
+			let cmd_header_bits = command_header.bits.read();
+			cmd_header_bits.with_command_fis_length((size_of::<FisRegHostToDevice>() / size_of::<u32>()) as u8);
+			command_header.bits.write(cmd_header_bits);
+		}
+
+		let mut read = command_header.command_table_base.read();
+		let command_table;
+		command_table = &mut *read;
+		(command_table as *mut CommandTable).write_bytes(0, 1);
+
+		let prdt_entries = &mut command_table.prdt_entry;
+
+		let command_fis: &mut FisRegHostToDevice;
+		command_fis = &mut *(&mut command_table.command_fis as *mut _ as *mut FisRegHostToDevice);
+
+		callback(command_header, command_fis, prdt_entries);
+
+		// Wait for port to clear up
+		while self.task_file_data.read() & 0x88 != 0 {
+			// unsafe { asm!("nop") };
+		}
+
+		let ci = 1 << slot;
+
+		// Issue command
+		self.command_issue.write(ci);
+
+		// Wait for completion
+		while self.command_issue.read() & ci != 0 {
+			// unsafe { asm!("nop") };
+		}
+
+		Ok(())
+	}
+
+	unsafe fn find_command_slot(&self) -> Result<usize, AtaError> {
 		let mut slots = self.command_issue.read() | self.sata_active.read();
 		for i in 0..32 {
 			if slots & 1 == 0 {
-				return Some(i);
+				return Ok(i);
 			}
 			slots >>= 1;
 		}
-		None
+		Err(NoCommandSlots)
 	}
 
 	unsafe fn get_interface_power_management(&self) -> u8 {
@@ -533,7 +656,7 @@ impl<T> DerefMut for PhysPtr<T> {
 		match option_virt {
 			Some(v) => unsafe { &mut *v.as_mut_ptr() },
 			None => {
-				unreachable!("All physical pointers should be in the map")
+				unreachable!("All physical pointers should be in the map, {:#x}", self.addr)
 			}
 		}
 	}

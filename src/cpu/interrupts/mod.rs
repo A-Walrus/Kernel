@@ -26,8 +26,6 @@ lazy_static! {
 		let mut idt = InterruptDescriptorTable::new();
 		idt.breakpoint.set_handler_fn(breakpoint_handler);
 		idt.page_fault.set_handler_fn(page_fault_handler);
-		// idt[IRQ::Keyboard.index()].set_handler_fn(keyboard_interrupt_handler);
-		// idt[IRQ::Timer.index()].set_handler_fn(timer_interrupt_handler);
 		idt.double_fault.set_handler_fn(double_fault_handler);
 		idt.invalid_tss.set_handler_fn(invalid_tss_handler);
 		set_irq_handlers(&mut idt);
@@ -84,28 +82,12 @@ pub fn register_callback(irq: u8, callback: fn(&InterruptStackFrame)) {
 }
 
 fn timer_interrupt_handler(_stack_frame: &InterruptStackFrame) {
-	print!(".");
+	// print!(".");
 }
 fn keyboard_interrupt_handler(_stack_frame: &InterruptStackFrame) {
 	use crate::io::keyboard;
 	keyboard::read_input();
 }
-
-// /// Interrupt handler for timer interrupts.
-// extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-// 	unsafe {
-// 		PICS.lock().notify_end_of_interrupt(IRQ::Timer.as_u8());
-// 	}
-// }
-
-// /// Interupt handler for keyboard interrupts.
-// extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-// 	use crate::io::keyboard;
-// 	keyboard::read_input();
-// 	unsafe {
-// 		PICS.lock().notify_end_of_interrupt(IRQ::Keyboard.as_u8());
-// 	}
-// }
 
 /// Interrupt handler for breakpoint interrupts.
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {

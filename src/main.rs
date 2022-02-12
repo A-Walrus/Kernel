@@ -29,9 +29,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 			buffer::TERM = Some(term);
 		}
 
-		// unsafe {
-		// 	drivers::ahci::setup();
-		// }
+		unsafe {
+			drivers::ahci::setup();
+		}
 	}
 	loop {}
 }

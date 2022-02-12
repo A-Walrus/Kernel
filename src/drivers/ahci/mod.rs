@@ -175,6 +175,12 @@ enum AtaError {
 	NoCommandSlots,
 	InvalidSectorCount,
 }
+
+enum ReadWrite {
+	Read,
+	Write,
+}
+
 use AtaError::*;
 
 impl Port {
@@ -265,7 +271,7 @@ impl Port {
 	// 	}
 	// }
 
-	unsafe fn ata_read(&mut self, start_sector: u64, buf: &mut [Sector]) -> Result<(), AtaError> {
+	unsafe fn ata_dma(&mut self, start_sector: u64, buf: &mut [Sector], read_write: ReadWrite) -> Result<(), AtaError> {
 		let count = buf.len();
 		if count == 0 || count >= 256 {
 			return Err(AtaError::InvalidSectorCount);
@@ -287,9 +293,13 @@ impl Port {
 					.with_interrupt_on_completion(true),
 			);
 
+			let command = match read_write {
+				ReadWrite::Read => 0x25,
+				ReadWrite::Write => 0x35,
+			};
 			*cmdfis = FisRegHostToDevice::new(
 				FisRegH2DBits::new().with_command_or_control(true),
-				0x25,
+				command,
 				0,
 				start_sector,
 				sector_count,

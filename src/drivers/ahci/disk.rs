@@ -1,4 +1,4 @@
-use super::{fis::RecievedFis, CommandList, CommandTable, Port};
+use super::{fis::RecievedFis, CommandList, CommandTable, Port, ReadWrite};
 use crate::{drivers::pci::Function, mem::heap::UBox};
 
 trait BlockDevice {
@@ -30,8 +30,11 @@ impl AtaDisk {
 		unsafe {
 			port.rebase();
 			disk_data = port.ata_identify().expect("Failed to Identify disk");
-			let mut buffer = UBox::new([[5; 512]; 8]);
-			port.ata_read(0, &mut *buffer).expect("Failed to read");
+			// let mut buffer = UBox::new([[5; 512]; 8]);
+			// port.ata_dma(0, &mut *buffer, ReadWrite::Read).expect("Failed to read");
+			// buffer[0][0] = 5;
+			// port.ata_dma(0, &mut *buffer, ReadWrite::Write).expect("Failed to read");
+			// port.ata_dma(0, &mut *buffer, ReadWrite::Read).expect("Failed to read");
 		}
 		Self {
 			port,

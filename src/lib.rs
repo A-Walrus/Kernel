@@ -30,6 +30,9 @@ pub mod mem;
 /// Dealing with drivers
 pub mod drivers;
 
+/// Dealing with filesystems and partitions
+pub mod fs;
+
 use core::panic::PanicInfo;
 
 /// Panic handler is called automatically when a panic occurs, and prints the information to serial

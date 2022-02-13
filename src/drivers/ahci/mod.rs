@@ -32,6 +32,7 @@ lazy_static! {
 }
 
 /// Error when trying to find a disk through AHCI
+#[derive(Debug)]
 pub enum AhciError {
 	/// There is no AHCI device on the PCI
 	NoAhciDevice,
@@ -157,7 +158,7 @@ pub struct Port {
 }
 
 struct IdentifyData {
-	_reserved0: [u16; 100],
+	_junk: [u16; 100],
 	sector_count: usize,
 }
 
@@ -600,7 +601,7 @@ const _: () = {
 
 use x86_64::structures::idt::InterruptStackFrame;
 fn interrupt_handler(_stack_frame: &InterruptStackFrame) {
-	serial_println!("Caught interrupt from ahci!");
+	// serial_println!("Caught interrupt from ahci!");
 }
 
 #[repr(transparent)]

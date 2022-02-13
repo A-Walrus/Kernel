@@ -1,4 +1,6 @@
-use super::Port;
+use core::slice;
+
+use super::{Port, Sector};
 
 pub trait BlockDevice {
 	/// Will always return 512
@@ -9,9 +11,11 @@ pub trait BlockDevice {
 	/// The number of sectors in this device
 	fn num_sectors(&self) -> usize;
 
-	// fn read();
+	/// Read sector at LBA
+	fn read_sector(&mut self, lba: usize, buffer: &mut Sector);
 
-	// fn write();
+	/// Write sector at LBA
+	fn write_sector(&mut self, lba: usize, buffer: &Sector);
 }
 
 pub struct Partition<T: BlockDevice> {
@@ -23,6 +27,14 @@ pub struct Partition<T: BlockDevice> {
 impl<T: BlockDevice> BlockDevice for Partition<T> {
 	fn num_sectors(&self) -> usize {
 		self.length
+	}
+
+	fn read_sector(&mut self, lba: usize, buffer: &mut Sector) {
+		self.disk.read_sector(lba + self.start_sector, buffer);
+	}
+
+	fn write_sector(&mut self, lba: usize, buffer: &Sector) {
+		self.disk.write_sector(lba + self.start_sector, buffer);
 	}
 }
 
@@ -60,9 +72,32 @@ impl AtaDisk {
 		}
 	}
 }
+use super::ReadWrite::*;
 
 impl BlockDevice for AtaDisk {
 	fn num_sectors(&self) -> usize {
 		self.num_sectors
+	}
+
+	fn read_sector(&mut self, lba: usize, buffer: &mut Sector) {
+		assert!(lba < self.num_sectors, "Trying to read outside of sector");
+		unsafe {
+			self.port
+				.ata_dma(lba as u64, slice::from_mut(buffer), Read)
+				.expect("Failed to read sector");
+		}
+	}
+
+	fn write_sector(&mut self, lba: usize, buffer: &Sector) {
+		assert!(lba < self.num_sectors, "Trying to write outside of sector");
+		unsafe {
+			self.port
+				.ata_dma(
+					lba as u64,
+					&mut *(slice::from_ref(buffer) as *const [Sector] as *mut [Sector]),
+					Write,
+				)
+				.expect("Failed to write sector");
+		}
 	}
 }

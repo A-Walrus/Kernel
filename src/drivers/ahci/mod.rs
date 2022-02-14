@@ -22,10 +22,15 @@ use crate::mem::{
 mod fis;
 use fis::*;
 
-mod disk;
+/// Abstractions for disks, and other block devices
+pub mod disk;
 use disk::*;
 
 const PRDTL: usize = 8;
+
+/// Byte per sector, hardcoded to 512. (Pretty much all disks use 512 byte sectors. Ones that don't
+/// are not supported.
+pub const SECTOR_SIZE: usize = 512;
 
 lazy_static! {
 	static ref PHYS_TO_VIRT: Mutex<HashMap<u64, VirtAddr>> = Mutex::new(HashMap::new());
@@ -39,7 +44,7 @@ pub enum AhciError {
 }
 
 /// Setup AHCI
-pub unsafe fn get_disk() -> Result<Box<dyn BlockDevice>, AhciError> {
+pub unsafe fn get_disks() -> Result<Vec<Box<dyn BlockDevice>>, AhciError> {
 	// Get all PCI functions
 	let functions = pci::recursive_scan();
 	// Filter the function with the Mass Media - Sata class
@@ -75,22 +80,25 @@ pub unsafe fn get_disk() -> Result<Box<dyn BlockDevice>, AhciError> {
 
 			hba_memory.global_host_control.write(1 << 31 | 1 << 1);
 
-			let mut disk = None;
 			let ports = hba_memory.available_ports();
+			for port in &ports {
+				serial_println!("{:?}", hba_memory.ports[*port].get_device_type());
+			}
+			let mut vec: Vec<Box<dyn BlockDevice>> = Vec::new();
 			for port in ports {
 				if hba_memory.ports[port].get_device_type() == DeviceType::Sata {
-					disk = Some(AtaDisk::new(&mut hba_memory.ports[port]));
-					break;
+					let disk = AtaDisk::new(&mut *(&mut hba_memory.ports[port] as *mut _));
+					vec.push(Box::new(disk));
 				}
 			}
-			let disk = disk.unwrap();
-			Ok(Box::new(disk))
+			Ok(vec)
 		}
 		None => Err(AhciError::NoAhciDevice),
 	}
 }
 
-type Sector = [u8; 512];
+/// An array of bytes, the size of one sector
+pub type Sector = [u8; SECTOR_SIZE];
 
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -157,6 +165,7 @@ pub struct Port {
 	vendor_specific: V<[u32; 4]>,
 }
 
+#[repr(C)]
 struct IdentifyData {
 	_junk: [u16; 100],
 	sector_count: usize,

@@ -16,6 +16,8 @@ const RUN_ARGS: &[&str] = &[
 	"isa-debug-exit,iobase=0xf4,iosize=0x04",
 	"-serial",
 	"stdio",
+	"-drive",
+	"format=raw,file=ext.img",
 	"-m",
 	"128M",
 ];

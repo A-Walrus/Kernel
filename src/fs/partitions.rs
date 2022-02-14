@@ -1,7 +1,11 @@
 use crate::{
-	drivers::ahci,
+	drivers::{
+		ahci,
+		ahci::disk::{BlockDevice, Partition},
+	},
 	mem::{self, heap::UBox},
 };
+use alloc::{boxed::Box, vec::Vec};
 
 #[repr(C)]
 struct GptHeader {
@@ -31,25 +35,40 @@ impl GptHeader {
 }
 
 /// Find the ext2 partition
-pub fn get_ext2_partition() {
-	let mut disk;
+pub fn get_ext2_partition() -> Option<Partition> {
+	let disks;
 	unsafe {
-		disk = ahci::get_disk().expect("Failed to get disk");
+		disks = ahci::get_disks().expect("Failed to get disk");
 	}
-
-	// Buffer to store gpt header
 	let mut buffer = UBox::new([0; 512]);
-	let buffer_ref = &mut *buffer;
-	disk.read_sector(1, buffer_ref);
-	unsafe {
-		let gpt_header = &*(buffer_ref as *mut _ as *const GptHeader);
-		gpt_header.check_signature().expect("Invalid gpt signature {}");
-	}
-	for partition in 0..32 {
-		disk.read_sector(2 + partition, buffer_ref);
+	for mut disk in disks {
+		// Buffer to store gpt header
+		let buffer_ref = &mut *buffer;
+		disk.read_sector(1, buffer_ref);
 		unsafe {
-			let gpt_partition = &*(buffer_ref as *mut _ as *const GptPartition);
-			serial_println!("{:?}", gpt_partition);
+			let gpt_header = &*(buffer_ref as *mut _ as *const GptHeader);
+			gpt_header.check_signature().expect("Invalid gpt signature {}");
+		}
+		for partition in 0..32 {
+			disk.read_sector(2 + partition, buffer_ref);
+			unsafe {
+				let gpt_partition = &*(buffer_ref as *mut _ as *const GptPartition);
+				const LINUX_FILE_SYSTEM: [u8; 16] = [
+					0xAF, 0x3D, 0xC6, 0xF, 0x83, 0x84, 0x72, 0x47, 0x8E, 0x79, 0x3D, 0x69, 0xD8, 0x47, 0x7D, 0xE4,
+				];
+				if gpt_partition.type_guid == LINUX_FILE_SYSTEM {
+					println!(
+						"FOUND LINUX FILE SYSTEM! Sectors : {} -> {}",
+						gpt_partition.first_lba, gpt_partition.last_lba
+					);
+					return Some(Partition::new(
+						gpt_partition.first_lba,
+						gpt_partition.last_lba - gpt_partition.first_lba,
+						disk,
+					));
+				}
+			}
 		}
 	}
+	None
 }

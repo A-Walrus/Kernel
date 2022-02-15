@@ -148,13 +148,14 @@ struct DirectoryEntry {
 
 /// Temporary entry point
 pub fn entry() {
-	serial_println!("Inode size: {}", size_of::<InodeData>());
 	let partition = Mutex::new(partitions::get_ext2_partition().unwrap());
 
 	let mut reader = SectorReader::new(2, 0, &partition);
 	let super_block: SuperBlock = unsafe { reader.read_type() };
+	serial_println!("");
 	serial_println!("{:?}", super_block);
 
+	serial_println!("");
 	super_block.check_signature().expect("Invalid ext signature!");
 	serial_println!("Block size: {}", super_block.block_size());
 	serial_println!("Inodes in group: {}", super_block.inodes_in_blockgroup);
@@ -162,7 +163,7 @@ pub fn entry() {
 
 	serial_println!("");
 
-	let inode = 2; //root
+	let inode = 11; //root = 2, alice =11
 	reader.move_to(
 		super_block.block_to_sector(super_block.block_group_start_block(super_block.get_inode_blockgroup(inode))),
 		0,
@@ -185,10 +186,46 @@ pub fn entry() {
 	let inode: InodeData = unsafe { reader.read_type() };
 	serial_println!("{:?}", inode);
 
+	serial_println!("");
+	// let file_reader = FileReader::new(inode, &super_block, &partition);
+	use core::str;
+
 	reader.move_to(super_block.block_to_sector(inode.direct_block_pointers[0]), 0);
 	let data: Sector = unsafe { reader.read_type() };
-	serial_println!("{:?}", data);
+	let string = str::from_utf8(&data).expect("String not utf8");
+	serial_print!("{}", string);
+
+	reader.move_to(1 + super_block.block_to_sector(inode.direct_block_pointers[0]), 0);
+	let data: Sector = unsafe { reader.read_type() };
+	let string = str::from_utf8(&data).expect("String not utf8");
+	serial_print!("{}", string);
+
+	reader.move_to(2 + super_block.block_to_sector(inode.direct_block_pointers[0]), 0);
+	let data: Sector = unsafe { reader.read_type() };
+	let string = str::from_utf8(&data).expect("String not utf8");
+	serial_print!("{}", string);
 }
+
+// struct FileReader<'a> {
+// 	inode: InodeData,
+// 	reader: SectorReader<'a>,
+// 	sectors_per_block: usize,
+// }
+
+// impl<'a> FileReader<'a> {
+// 	fn new(inode: InodeData, super_block: &SuperBlock, block_device: &'a Mutex<dyn BlockDevice>) -> Self {
+// 		let sectors_per_block = super_block.sectors_per_block();
+// 		Self {
+// 			inode,
+// 			sectors_per_block: sectors_per_block,
+// 			reader: SectorReader::new(
+// 				sectors_per_block * inode.direct_block_pointers[0] as usize,
+// 				0,
+// 				block_device,
+// 			),
+// 		}
+// 	}
+// }
 
 // struct DirectoryIter<'a> {
 // 	reader: SectorReader<'a>,

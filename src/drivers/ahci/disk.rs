@@ -1,6 +1,7 @@
-use crate::mem::heap::UBox;
+use crate::mem::heap::{UBox, UBuffer};
 use alloc::boxed::Box;
 use core::{
+	cmp::min,
 	mem::{size_of, zeroed},
 	ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
 	slice,
@@ -10,48 +11,74 @@ use spin::Mutex;
 use super::{Port, Sector, SECTOR_SIZE};
 
 /// A struct that can browse and read sectors, with a similair interface to std::io
-pub struct SectorReader<'a> {
+pub struct BlockReader<'a> {
 	offset: usize,
-	sector: usize,
-	buffer: UBox<Sector>,
+	block: usize,
+	sectors_per_block: usize,
+	buffer: UBuffer,
 	block_device: &'a Mutex<dyn BlockDevice>,
 }
 
-impl<'a> SectorReader<'a> {
+impl<'a> BlockReader<'a> {
 	/// Create a new SectorReador at a certain sector, and offset, on a given block device (through
 	/// Mutex for safety)
-	pub fn new(sector: usize, offset: usize, block_device: &'a Mutex<dyn BlockDevice>) -> Self {
-		let mut me = Self {
+	pub fn new(
+		block: usize,
+		sectors_per_block: usize,
+		offset: usize,
+		block_device: &'a Mutex<dyn BlockDevice>,
+	) -> Self {
+		Self {
 			offset,
-			sector,
+			block,
+			sectors_per_block,
 			block_device,
-			buffer: UBox::new([0; SECTOR_SIZE]),
-		};
-		me.read_current_sector();
-		me
+			buffer: UBuffer::new(sectors_per_block * SECTOR_SIZE),
+		}
 	}
 
-	fn read_current_sector(&mut self) {
-		self.block_device.lock().read_sector(self.sector, &mut *self.buffer);
+	fn read_current_block(&mut self) {
+		let slice;
+		unsafe {
+			// slice = slice_from_raw_parts_mut(self.buffer.ptr as *mut Sector, self.sectors_per_block)
+			// 	.as_mut()
+			// 	.unwrap();
+			slice = slice_from_raw_parts_mut(self.buffer.slice as *mut Sector, self.sectors_per_block)
+				.as_mut()
+				.unwrap();
+		}
+		self.block_device
+			.lock()
+			.read_sectors(self.block * self.sectors_per_block, slice);
 	}
 
 	/// Fill the buffer with bytes red from the current location
 	pub fn read(&mut self, mut buffer: &mut [u8]) {
-		let mut len_wanted = buffer.len();
-		let mut len_available = SECTOR_SIZE - self.offset;
-
-		while len_wanted >= len_available {
-			buffer[..len_available].copy_from_slice(&self.buffer[self.offset..SECTOR_SIZE]);
-			buffer = &mut buffer[len_available..];
-
-			self.sector += 1;
-			self.read_current_sector();
-
-			self.offset = 0;
-			len_available = SECTOR_SIZE;
-			len_wanted = buffer.len();
+		while buffer.len() > 0 {
+			if self.offset == 0 {
+				self.read_current_block();
+				if buffer.len() >= self.sectors_per_block * SECTOR_SIZE {
+					self.block += 1;
+				}
+			}
+			let len_available = SECTOR_SIZE * self.sectors_per_block - self.offset;
+			let len_to_take = min(len_available, buffer.len());
+			unsafe {
+				buffer[..len_to_take]
+					.copy_from_slice(&self.buffer.slice.as_mut().unwrap()[self.offset..(self.offset + len_to_take)]);
+			}
+			buffer = &mut buffer[len_to_take..];
+			self.offset += len_to_take;
 		}
-		buffer[..len_wanted].copy_from_slice(&self.buffer[self.offset..self.offset + len_wanted]);
+	}
+
+	/// Move the "cursor" forward some offset of bytes, possibly crossing sectors and block
+	/// boundaries
+	pub fn seek_forward(&mut self, offset: usize) {
+		let new_offset = self.offset + offset / (self.sectors_per_block * SECTOR_SIZE);
+		let new_block = self.offset + offset / (self.sectors_per_block * SECTOR_SIZE);
+		self.block = new_block;
+		self.offset = new_offset;
 	}
 
 	/// Read data into a struct.
@@ -65,17 +92,18 @@ impl<'a> SectorReader<'a> {
 		self.read(slice);
 		val
 	}
-	/// Write to the current location from the buffer
-	pub fn write(&mut self, buffer: &[u8]) {
-		unimplemented!()
-	}
 
-	/// Move reader to given sector and offset
-	pub fn move_to(&mut self, sector: usize, offset: usize) {
-		self.sector = sector;
-		self.offset = offset;
-		self.read_current_sector();
-	}
+	// /// Write to the current location from the buffer
+	// pub fn write(&mut self, buffer: &[u8]) {
+	// 	unimplemented!()
+	// }
+
+	// /// Move reader to given sector and offset
+	// pub fn move_to(&mut self, sector: usize, offset: usize) {
+	// 	self.sector = sector;
+	// 	self.offset = offset;
+	// 	self.read_current_sector();
+	// }
 }
 
 /// Trait representing a block device.
@@ -89,10 +117,23 @@ pub trait BlockDevice {
 	fn num_sectors(&self) -> usize;
 
 	/// Read sector at LBA
-	fn read_sector(&mut self, lba: usize, buffer: &mut Sector);
+	fn read_sector(&mut self, lba: usize, buffer: &mut Sector) {
+		self.read_sectors(lba, slice::from_mut(buffer));
+	}
 
 	/// Write sector at LBA
-	fn write_sector(&mut self, lba: usize, buffer: &Sector);
+	fn write_sector(&mut self, lba: usize, buffer: &Sector) {
+		unsafe {
+			let temp = &mut *(slice::from_ref(buffer) as *const [Sector] as *mut [Sector]);
+			self.write_sectors(lba, temp);
+		}
+	}
+
+	/// Read sectors at LBA
+	fn read_sectors(&mut self, lba: usize, buffer: &mut [Sector]);
+
+	/// Write sectors at LBA
+	fn write_sectors(&mut self, lba: usize, buffer: &[Sector]);
 }
 
 /// Struct represnting a partition on some block device
@@ -107,18 +148,18 @@ impl BlockDevice for Partition {
 		self.length
 	}
 
-	fn read_sector(&mut self, lba: usize, buffer: &mut Sector) {
-		self.disk.read_sector(lba + self.start_sector, buffer);
+	fn read_sectors(&mut self, lba: usize, buffer: &mut [Sector]) {
+		self.disk.read_sectors(lba + self.start_sector, buffer);
 	}
 
-	fn write_sector(&mut self, lba: usize, buffer: &Sector) {
-		self.disk.write_sector(lba + self.start_sector, buffer);
+	fn write_sectors(&mut self, lba: usize, buffer: &[Sector]) {
+		self.disk.write_sectors(lba + self.start_sector, buffer);
 	}
 }
 
 impl Partition {
 	/// Create a new partiton on a given disk. Taking the disk. (TODO change the partition type to
-	/// be able to hav emultiple partitions on one disk
+	/// be able to have multiple partitions on one disk
 	pub fn new(start_sector: usize, length: usize, disk: Box<dyn BlockDevice>) -> Self {
 		assert!(start_sector + length < disk.num_sectors());
 		Self {
@@ -160,24 +201,26 @@ impl BlockDevice for AtaDisk {
 		self.num_sectors
 	}
 
-	fn read_sector(&mut self, lba: usize, buffer: &mut Sector) {
-		assert!(lba < self.num_sectors, "Trying to read outside of sector");
+	fn read_sectors(&mut self, lba: usize, buffer: &mut [Sector]) {
+		assert!(
+			lba + buffer.len() < self.num_sectors,
+			"Trying to read outside of sector"
+		);
 		unsafe {
 			self.port
-				.ata_dma(lba as u64, slice::from_mut(buffer), Read)
+				.ata_dma(lba as u64, buffer, Read)
 				.expect("Failed to read sector");
 		}
 	}
 
-	fn write_sector(&mut self, lba: usize, buffer: &Sector) {
-		assert!(lba < self.num_sectors, "Trying to write outside of sector");
+	fn write_sectors(&mut self, lba: usize, buffer: &[Sector]) {
+		assert!(
+			lba + buffer.len() < self.num_sectors,
+			"Trying to write outside of sector"
+		);
 		unsafe {
 			self.port
-				.ata_dma(
-					lba as u64,
-					&mut *(slice::from_ref(buffer) as *const [Sector] as *mut [Sector]),
-					Write,
-				)
+				.ata_dma(lba as u64, &mut *(buffer as *const [Sector] as *mut [Sector]), Write)
 				.expect("Failed to write sector");
 		}
 	}

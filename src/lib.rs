@@ -11,6 +11,7 @@
 #![feature(alloc_error_handler)] // error handler for alloc failiures
 #![feature(int_log)] // log2 for ints (using single assembly instruction to find highest bit)
 #![feature(slice_ptr_get)]
+#![feature(slice_ptr_len)]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 

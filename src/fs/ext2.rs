@@ -3,7 +3,7 @@ use core::mem::size_of;
 use super::partitions;
 use crate::{
 	drivers::ahci::{
-		disk::{BlockDevice, SectorReader},
+		disk::{BlockDevice, BlockReader},
 		Sector, SECTOR_SIZE,
 	},
 	mem::heap::UBox,
@@ -150,8 +150,8 @@ struct DirectoryEntry {
 pub fn entry() {
 	let partition = Mutex::new(partitions::get_ext2_partition().unwrap());
 
-	let mut reader = SectorReader::new(2, 0, &partition);
-	let super_block: SuperBlock = unsafe { reader.read_type() };
+	let mut sector_reader = BlockReader::new(2, 1, 0, &partition);
+	let super_block: SuperBlock = unsafe { sector_reader.read_type() };
 	serial_println!("");
 	serial_println!("{:?}", super_block);
 
@@ -163,47 +163,49 @@ pub fn entry() {
 
 	serial_println!("");
 
-	let inode = 11; //root = 2, alice =11
-	reader.move_to(
-		super_block.block_to_sector(super_block.block_group_start_block(super_block.get_inode_blockgroup(inode))),
+	let inode = 2;
+	let mut block_reader = BlockReader::new(
+		super_block.block_group_start_block(super_block.get_inode_blockgroup(inode)) as usize,
+		super_block.sectors_per_block(),
 		0,
+		&partition,
 	);
 
-	let block_group_desc: BlockGroupDescriptor = unsafe { reader.read_type() };
+	let block_group_desc: BlockGroupDescriptor = unsafe { block_reader.read_type() };
 	serial_println!("{:?}", block_group_desc);
 
 	serial_println!("");
 
-	let inodes_per_sector = SECTOR_SIZE / super_block.inode_size as usize;
-	let index = super_block.inode_index_in_blockgroup(inode);
-	let containing_sector = ((index * super_block.inode_size as u32) as usize / SECTOR_SIZE) as usize;
-	let offset = (index as usize % inodes_per_sector) * super_block.inode_size as usize;
+	// let inodes_per_sector = SECTOR_SIZE / super_block.inode_size as usize;
+	// let index = super_block.inode_index_in_blockgroup(inode);
+	// let containing_sector = ((index * super_block.inode_size as u32) as usize / SECTOR_SIZE) as usize;
+	// let offset = (index as usize % inodes_per_sector) * super_block.inode_size as usize;
 
-	reader.move_to(
-		super_block.block_to_sector(block_group_desc.inode_table_starting_address) + containing_sector,
-		offset,
-	);
-	let inode: InodeData = unsafe { reader.read_type() };
-	serial_println!("{:?}", inode);
+	// reader.move_to(
+	// 	super_block.block_to_sector(block_group_desc.inode_table_starting_address) + containing_sector,
+	// 	offset,
+	// );
+	// let inode: InodeData = unsafe { reader.read_type() };
+	// serial_println!("{:?}", inode);
 
-	serial_println!("");
-	// let file_reader = FileReader::new(inode, &super_block, &partition);
-	use core::str;
+	// serial_println!("");
+	// // let file_reader = FileReader::new(inode, &super_block, &partition);
+	// use core::str;
 
-	reader.move_to(super_block.block_to_sector(inode.direct_block_pointers[0]), 0);
-	let data: Sector = unsafe { reader.read_type() };
-	let string = str::from_utf8(&data).expect("String not utf8");
-	serial_print!("{}", string);
+	// reader.move_to(super_block.block_to_sector(inode.direct_block_pointers[0]), 0);
+	// let data: Sector = unsafe { reader.read_type() };
+	// let string = str::from_utf8(&data).expect("String not utf8");
+	// serial_print!("{}", string);
 
-	reader.move_to(1 + super_block.block_to_sector(inode.direct_block_pointers[0]), 0);
-	let data: Sector = unsafe { reader.read_type() };
-	let string = str::from_utf8(&data).expect("String not utf8");
-	serial_print!("{}", string);
+	// reader.move_to(1 + super_block.block_to_sector(inode.direct_block_pointers[0]), 0);
+	// let data: Sector = unsafe { reader.read_type() };
+	// let string = str::from_utf8(&data).expect("String not utf8");
+	// serial_print!("{}", string);
 
-	reader.move_to(2 + super_block.block_to_sector(inode.direct_block_pointers[0]), 0);
-	let data: Sector = unsafe { reader.read_type() };
-	let string = str::from_utf8(&data).expect("String not utf8");
-	serial_print!("{}", string);
+	// reader.move_to(2 + super_block.block_to_sector(inode.direct_block_pointers[0]), 0);
+	// let data: Sector = unsafe { reader.read_type() };
+	// let string = str::from_utf8(&data).expect("String not utf8");
+	// serial_print!("{}", string);
 }
 
 // struct FileReader<'a> {

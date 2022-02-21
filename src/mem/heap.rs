@@ -1,6 +1,7 @@
 use core::{
 	alloc::{GlobalAlloc, Layout},
 	ops::{Deref, DerefMut},
+	ptr::slice_from_raw_parts_mut,
 };
 
 use super::paging;
@@ -57,6 +58,34 @@ pub fn setup(frambuffer_size: usize) {
 		paging::map_in_current(range, flags);
 		unsafe {
 			UNCACHED_ALLOCATOR.lock().init(UNCACHED_HEAP_START, uncached_heap_size);
+		}
+	}
+}
+
+/// Buffer stored on the uncached heap
+pub struct UBuffer {
+	/// Pointer to the buffer on the uncached heap
+	pub slice: *mut [u8],
+}
+
+impl UBuffer {
+	/// Create a new uncached buffer of a given size on the heap
+	pub fn new(size: usize) -> Self {
+		let ptr;
+		unsafe { ptr = UNCACHED_ALLOCATOR.alloc(Layout::from_size_align(size, 1).unwrap()) };
+		Self {
+			slice: slice_from_raw_parts_mut(ptr, size),
+		}
+	}
+}
+
+impl Drop for UBuffer {
+	fn drop(&mut self) {
+		unsafe {
+			UNCACHED_ALLOCATOR.dealloc(
+				self.slice.as_mut_ptr(),
+				Layout::from_size_align(self.slice.len(), 1).unwrap(),
+			)
 		}
 	}
 }

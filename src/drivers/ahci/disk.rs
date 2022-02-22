@@ -1,4 +1,7 @@
-use crate::mem::heap::{UBox, UBuffer};
+use crate::{
+	mem::heap::{UBox, UBuffer},
+	util::io::{IOError, Read},
+};
 use alloc::boxed::Box;
 use core::{
 	cmp::min,
@@ -38,6 +41,7 @@ impl<'a> BlockReader<'a> {
 	}
 
 	fn read_current_block(&mut self) {
+		// serial_println!("Reading block: {}, of size: {}", self.block, self.sectors_per_block);
 		let slice;
 		unsafe {
 			// slice = slice_from_raw_parts_mut(self.buffer.ptr as *mut Sector, self.sectors_per_block)
@@ -52,45 +56,22 @@ impl<'a> BlockReader<'a> {
 			.read_sectors(self.block * self.sectors_per_block, slice);
 	}
 
-	/// Fill the buffer with bytes red from the current location
-	pub fn read(&mut self, mut buffer: &mut [u8]) {
-		while buffer.len() > 0 {
-			if self.offset == 0 {
-				self.read_current_block();
-				if buffer.len() >= self.sectors_per_block * SECTOR_SIZE {
-					self.block += 1;
-				}
-			}
-			let len_available = SECTOR_SIZE * self.sectors_per_block - self.offset;
-			let len_to_take = min(len_available, buffer.len());
-			unsafe {
-				buffer[..len_to_take]
-					.copy_from_slice(&self.buffer.slice.as_mut().unwrap()[self.offset..(self.offset + len_to_take)]);
-			}
-			buffer = &mut buffer[len_to_take..];
-			self.offset += len_to_take;
-		}
-	}
-
 	/// Move the "cursor" forward some offset of bytes, possibly crossing sectors and block
 	/// boundaries
 	pub fn seek_forward(&mut self, offset: usize) {
-		let new_offset = self.offset + offset / (self.sectors_per_block * SECTOR_SIZE);
-		let new_block = self.offset + offset / (self.sectors_per_block * SECTOR_SIZE);
-		self.block = new_block;
+		let new_offset = (self.offset + offset) % (self.sectors_per_block * SECTOR_SIZE);
+		let block_offset = (self.offset + offset) / (self.sectors_per_block * SECTOR_SIZE);
+		self.block += block_offset;
 		self.offset = new_offset;
+		if block_offset != 0 && offset != 0 {
+			self.read_current_block();
+		}
 	}
 
-	/// Read data into a struct.
-	/// # Safety
-	/// - Must make sure that the data in that part of the disk is valid for that type, otherwise
-	/// UB
-	#[inline(always)]
-	pub unsafe fn read_type<T>(&mut self) -> T {
-		let mut val: T = zeroed();
-		let slice = &mut *(slice_from_raw_parts_mut(&mut val as *mut T as *mut u8, size_of::<T>()));
-		self.read(slice);
-		val
+	/// Move to block
+	pub fn move_to_block(&mut self, block: usize) {
+		self.block = block;
+		self.offset = 0;
 	}
 
 	// /// Write to the current location from the buffer
@@ -106,6 +87,35 @@ impl<'a> BlockReader<'a> {
 	// }
 }
 
+impl<'a> Read for BlockReader<'a> {
+	/// Fill the buffer with bytes red from the current location
+	fn read(&mut self, mut buffer: &mut [u8]) -> Result<usize, IOError> {
+		let original_length = buffer.len();
+		while buffer.len() > 0 {
+			if self.offset == 0 {
+				self.read_current_block();
+				if buffer.len() >= self.sectors_per_block * SECTOR_SIZE {
+					self.block += 1;
+				}
+			}
+			let len_available = SECTOR_SIZE * self.sectors_per_block - self.offset;
+			let len_to_take = min(len_available, buffer.len());
+			unsafe {
+				// serial_println!("{} {} {}", self.offset, len_to_take, len_available);
+				buffer[..len_to_take]
+					.copy_from_slice(&self.buffer.slice.as_mut().unwrap()[self.offset..(self.offset + len_to_take)]);
+			}
+			buffer = &mut buffer[len_to_take..];
+			// self.offset += len_to_take;
+			self.offset = if len_to_take == len_available {
+				0
+			} else {
+				self.offset + len_to_take
+			};
+		}
+		Ok(original_length) // TODO failable read
+	}
+}
 /// Trait representing a block device.
 pub trait BlockDevice {
 	/// Will always return 512

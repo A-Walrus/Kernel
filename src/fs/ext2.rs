@@ -7,7 +7,10 @@ use crate::{
 		Sector, SECTOR_SIZE,
 	},
 	mem::heap::UBox,
+	util::io::*,
 };
+
+use alloc::{collections::VecDeque, str, string::String, vec::Vec};
 use spin::Mutex;
 
 fn undo_log_minus_10(num: u32) -> usize {
@@ -101,7 +104,7 @@ impl SuperBlock {
 #[derive(Debug)]
 struct BlockGroupDescriptor {
 	block_usage_bitmap_address: u32,
-	unode_usage_bitmap_address: u32,
+	inode_usage_bitmap_address: u32,
 	inode_table_starting_address: u32,
 	unallocated_blocks_in_group: u16,
 	unallocated_inodes_in_group: u16,
@@ -110,7 +113,7 @@ struct BlockGroupDescriptor {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 struct InodeData {
 	type_and_permissions: u16,
 	user_id: u16,
@@ -161,82 +164,90 @@ pub fn entry() {
 	serial_println!("Inodes in group: {}", super_block.inodes_in_blockgroup);
 	serial_println!("Size of inodes:  {}", super_block.inode_size);
 
-	serial_println!("");
+	let mut file_reader = FileReader::new(11, &super_block, &partition);
 
-	let inode = 2;
-	let mut block_reader = BlockReader::new(
-		super_block.block_group_start_block(super_block.get_inode_blockgroup(inode)) as usize,
-		super_block.sectors_per_block(),
-		0,
-		&partition,
-	);
-
-	let block_group_desc: BlockGroupDescriptor = unsafe { block_reader.read_type() };
-	serial_println!("{:?}", block_group_desc);
-
-	serial_println!("");
-
-	// let inodes_per_sector = SECTOR_SIZE / super_block.inode_size as usize;
-	// let index = super_block.inode_index_in_blockgroup(inode);
-	// let containing_sector = ((index * super_block.inode_size as u32) as usize / SECTOR_SIZE) as usize;
-	// let offset = (index as usize % inodes_per_sector) * super_block.inode_size as usize;
-
-	// reader.move_to(
-	// 	super_block.block_to_sector(block_group_desc.inode_table_starting_address) + containing_sector,
-	// 	offset,
-	// );
-	// let inode: InodeData = unsafe { reader.read_type() };
-	// serial_println!("{:?}", inode);
-
-	// serial_println!("");
-	// // let file_reader = FileReader::new(inode, &super_block, &partition);
-	// use core::str;
-
-	// reader.move_to(super_block.block_to_sector(inode.direct_block_pointers[0]), 0);
-	// let data: Sector = unsafe { reader.read_type() };
-	// let string = str::from_utf8(&data).expect("String not utf8");
-	// serial_print!("{}", string);
-
-	// reader.move_to(1 + super_block.block_to_sector(inode.direct_block_pointers[0]), 0);
-	// let data: Sector = unsafe { reader.read_type() };
-	// let string = str::from_utf8(&data).expect("String not utf8");
-	// serial_print!("{}", string);
-
-	// reader.move_to(2 + super_block.block_to_sector(inode.direct_block_pointers[0]), 0);
-	// let data: Sector = unsafe { reader.read_type() };
-	// let string = str::from_utf8(&data).expect("String not utf8");
-	// serial_print!("{}", string);
+	let mut buf = Vec::new();
+	let result = file_reader.read_to_end(&mut buf);
+	// let string = String::from_utf8(buf);
+	let string = str::from_utf8(&buf);
+	serial_print!("{}", string.unwrap());
 }
 
-// struct FileReader<'a> {
-// 	inode: InodeData,
-// 	reader: SectorReader<'a>,
-// 	sectors_per_block: usize,
-// }
+struct FileReader<'a> {
+	inode_data: InodeData,
+	reader: BlockReader<'a>,
+	position: usize,
+	blocks: [VecDeque<u32>; 4],
+}
 
-// impl<'a> FileReader<'a> {
-// 	fn new(inode: InodeData, super_block: &SuperBlock, block_device: &'a Mutex<dyn BlockDevice>) -> Self {
-// 		let sectors_per_block = super_block.sectors_per_block();
-// 		Self {
-// 			inode,
-// 			sectors_per_block: sectors_per_block,
-// 			reader: SectorReader::new(
-// 				sectors_per_block * inode.direct_block_pointers[0] as usize,
-// 				0,
-// 				block_device,
-// 			),
-// 		}
-// 	}
-// }
+impl<'a> FileReader<'a> {
+	fn get_next_block(&mut self) -> u32 {
+		self.get_next_block_of(0)
+	}
 
-// struct DirectoryIter<'a> {
-// 	reader: SectorReader<'a>,
-// }
+	fn get_next_block_of(&mut self, level: usize) -> u32 {
+		match self.blocks[level].pop_front() {
+			Some(block) => block,
+			None => {
+				let block = self.get_next_block_of(level + 1);
+				// TODO FUCKKKKKKKKkkkk
+			}
+		}
+	}
 
-// impl<'a> Iterator for DirectoryIter<'a> {
-// 	type Item = DirectoryEntry;
+	fn new(inode: u32, super_block: &SuperBlock, block_device: &'a Mutex<dyn BlockDevice>) -> Self {
+		let mut block_reader = BlockReader::new(
+			super_block.block_group_start_block(super_block.get_inode_blockgroup(inode)) as usize,
+			super_block.sectors_per_block(),
+			0,
+			block_device,
+		);
 
-// 	fn next(&mut self) -> Option<Self::Item> {
-// 		let entry: DirectoryEntry = unsafe { self.reader.read_type() };
-// 	}
-// }
+		let block_group_desc: BlockGroupDescriptor = unsafe { block_reader.read_type() };
+		// serial_println!("{:?}", block_group_desc);
+		// serial_println!("");
+		block_reader.move_to_block(block_group_desc.inode_table_starting_address as usize);
+		block_reader
+			.seek_forward(super_block.inode_index_in_blockgroup(inode) as usize * super_block.inode_size as usize);
+		let inode_data: InodeData = unsafe { block_reader.read_type() };
+
+		let mut direct_blocks = VecDeque::from(inode_data.direct_block_pointers);
+		let mut singly_indirect_blocks = VecDeque::from([inode_data.singly_indirect_pointer]);
+		let mut doubly_indirect_blocks = VecDeque::from([inode_data.doubly_indirect_pointer]);
+		let mut tripy_indirect_blocks = VecDeque::from([inode_data.triply_indirect_pointer]);
+
+		// TODO possibly move reader?
+		Self {
+			inode_data,
+			reader: block_reader,
+			position: 0,
+			blocks: [
+				direct_blocks,
+				singly_indirect_blocks,
+				doubly_indirect_blocks,
+				tripy_indirect_blocks,
+			],
+		}
+	}
+}
+impl<'a> Read for FileReader<'a> {
+	fn read(&mut self, buf: &mut [u8]) -> Result<usize, IOError> {
+		// TODO
+		unimplemented!()
+	}
+}
+
+struct DirectoryIter<'a> {
+	reader: FileReader<'a>,
+	position: (),
+}
+
+impl<'a> Iterator for DirectoryIter<'a> {
+	type Item = (DirectoryEntry, String);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		let entry: DirectoryEntry = unsafe { self.reader.read_type() };
+		// TODO get name and move to next location
+		unimplemented!()
+	}
+}

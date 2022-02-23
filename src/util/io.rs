@@ -17,16 +17,11 @@ pub trait Read {
 	fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<usize, IOError> {
 		let start_len = buf.len();
 		let mut buffer: [u8; 512] = [0; 512];
-		let mut byte_count = 0;
 		loop {
 			let result = self.read(&mut buffer);
 			match result {
 				Ok(0) => return Ok(buf.len() - start_len),
-				Ok(n) => {
-					byte_count += n;
-					serial_println!("byte count: {}", byte_count);
-					buf.extend_from_slice(&buffer[..n])
-				}
+				Ok(n) => buf.extend_from_slice(&buffer[..n]),
 				Err(e) => {
 					return Err(e);
 				}

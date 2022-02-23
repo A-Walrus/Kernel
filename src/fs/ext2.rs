@@ -162,13 +162,15 @@ pub fn entry() {
 	serial_println!("Inodes in group: {}", super_block.inodes_in_blockgroup);
 	serial_println!("Size of inodes:  {}", super_block.inode_size);
 
-	let mut file_reader = FileReader::new(11, &super_block, &partition);
+	let mut file_reader = FileReader::new(2, &super_block, &partition);
+	// let mut data = Vec::new();
+	// file_reader.read_to_end(&mut data);
+	// serial_println!("{:?}", data.len());
 
-	let mut data = Vec::new();
-	let result = file_reader.read_to_end(&mut data);
-	// let string = String::from_utf8(buf);
-	let string = str::from_utf8(&data);
-	serial_println!("{}", string.unwrap());
+	let directory_iter = DirectoryIter { reader: file_reader };
+	for item in directory_iter {
+		serial_println!("{:?}", item);
+	}
 }
 
 struct FileReader<'a> {
@@ -210,12 +212,14 @@ impl<'a> FileReader<'a> {
 		);
 
 		let block_group_desc: BlockGroupDescriptor = unsafe { block_reader.read_type() };
-		// serial_println!("{:?}", block_group_desc);
-		// serial_println!("");
+		serial_println!("{:?}", block_group_desc);
+		serial_println!("");
 		block_reader.move_to_block(block_group_desc.inode_table_starting_address as usize);
 		block_reader
 			.seek_forward(super_block.inode_index_in_blockgroup(inode) as usize * super_block.inode_size as usize);
 		let inode_data: InodeData = unsafe { block_reader.read_type() };
+
+		serial_println!("{:?}", inode_data);
 
 		let direct_blocks = VecDeque::from(inode_data.direct_block_pointers);
 		let singly_indirect_blocks = VecDeque::from([inode_data.singly_indirect_pointer]);
@@ -244,7 +248,6 @@ impl<'a> Read for FileReader<'a> {
 		let block_size = self.reader.slice().len();
 		let mut block = self.reader.slice();
 		while left_to_read > 0 {
-			serial_println!("len: {}", buf.len());
 			let offset_in_block = self.position % block_size;
 			let to_read_from_block = min(left_to_read, block_size - offset_in_block);
 			if offset_in_block == 0 {
@@ -262,7 +265,6 @@ impl<'a> Read for FileReader<'a> {
 
 struct DirectoryIter<'a> {
 	reader: FileReader<'a>,
-	position: (),
 }
 
 impl<'a> Iterator for DirectoryIter<'a> {
@@ -270,7 +272,10 @@ impl<'a> Iterator for DirectoryIter<'a> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let entry: DirectoryEntry = unsafe { self.reader.read_type() };
-		// TODO get name and move to next location
-		unimplemented!()
+		let len = entry.total_entry_size as usize - size_of::<DirectoryEntry>();
+		let mut name = vec![0u8; len];
+		self.reader.read(&mut name);
+		name.truncate(entry.name_length_low as usize);
+		Some((entry, String::from_utf8(name).unwrap()))
 	}
 }

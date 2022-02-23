@@ -62,11 +62,11 @@ impl<'a> BlockReader<'a> {
 	pub fn seek_forward(&mut self, offset: usize) {
 		let new_offset = (self.offset + offset) % (self.sectors_per_block * SECTOR_SIZE);
 		let block_offset = (self.offset + offset) / (self.sectors_per_block * SECTOR_SIZE);
-		self.block += block_offset;
-		self.offset = new_offset;
-		if block_offset != 0 && offset != 0 {
+		if (self.offset == 0 || block_offset != 0) && new_offset != 0 {
 			self.read_current_block();
 		}
+		self.block += block_offset;
+		self.offset = new_offset;
 	}
 
 	/// Read the block into the buffer and return a slice to it

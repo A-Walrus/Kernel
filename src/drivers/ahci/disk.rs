@@ -40,6 +40,7 @@ impl<'a> BlockReader<'a> {
 		}
 	}
 
+	/// Read the current block into the buffer
 	fn read_current_block(&mut self) {
 		// serial_println!("Reading block: {}, of size: {}", self.block, self.sectors_per_block);
 		let slice;
@@ -68,22 +69,31 @@ impl<'a> BlockReader<'a> {
 		}
 	}
 
+	/// Read the block into the buffer and return a slice to it
+	pub fn read_block(&mut self, block: u32) -> &[u8] {
+		self.move_to_block(block as usize);
+		self.read_current_block();
+		self.slice()
+	}
+
 	/// Move to block
 	pub fn move_to_block(&mut self, block: usize) {
 		self.block = block;
 		self.offset = 0;
 	}
 
+	/// Get the slice of the buffer
+	pub fn slice(&self) -> &[u8] {
+		unsafe { self.buffer.slice.as_ref().unwrap() }
+	}
+
+	/// Get the mut slice of the buffer
+	pub fn mut_slice(&mut self) -> &mut [u8] {
+		unsafe { self.buffer.slice.as_mut().unwrap() }
+	}
 	// /// Write to the current location from the buffer
 	// pub fn write(&mut self, buffer: &[u8]) {
 	// 	unimplemented!()
-	// }
-
-	// /// Move reader to given sector and offset
-	// pub fn move_to(&mut self, sector: usize, offset: usize) {
-	// 	self.sector = sector;
-	// 	self.offset = offset;
-	// 	self.read_current_sector();
 	// }
 }
 

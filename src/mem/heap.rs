@@ -71,6 +71,7 @@ pub struct UBuffer {
 impl UBuffer {
 	/// Create a new uncached buffer of a given size on the heap
 	pub fn new(size: usize) -> Self {
+		serial_println!("UBuffer size: {}", size);
 		let ptr;
 		unsafe { ptr = UNCACHED_ALLOCATOR.alloc(Layout::from_size_align(size, 1).unwrap()) };
 		Self {

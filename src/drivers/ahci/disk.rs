@@ -42,7 +42,7 @@ impl<'a> BlockReader<'a> {
 
 	/// Read the current block into the buffer
 	fn read_current_block(&mut self) {
-		// serial_println!("Reading block: {}, of size: {}", self.block, self.sectors_per_block);
+		serial_println!("Reading block: {}, of size: {}", self.block, self.sectors_per_block);
 		let slice;
 		unsafe {
 			// slice = slice_from_raw_parts_mut(self.buffer.ptr as *mut Sector, self.sectors_per_block)
@@ -62,10 +62,10 @@ impl<'a> BlockReader<'a> {
 	pub fn seek_forward(&mut self, offset: usize) {
 		let new_offset = (self.offset + offset) % (self.sectors_per_block * SECTOR_SIZE);
 		let block_offset = (self.offset + offset) / (self.sectors_per_block * SECTOR_SIZE);
+		self.block += block_offset;
 		if (self.offset == 0 || block_offset != 0) && new_offset != 0 {
 			self.read_current_block();
 		}
-		self.block += block_offset;
 		self.offset = new_offset;
 	}
 

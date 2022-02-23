@@ -162,15 +162,17 @@ pub fn entry() {
 	serial_println!("Inodes in group: {}", super_block.inodes_in_blockgroup);
 	serial_println!("Size of inodes:  {}", super_block.inode_size);
 
-	let mut file_reader = FileReader::new(2, &super_block, &partition);
-	// let mut data = Vec::new();
-	// file_reader.read_to_end(&mut data);
-	// serial_println!("{:?}", data.len());
+	let mut file_reader = FileReader::new(11, &super_block, &partition);
+	let mut data = Vec::new();
+	file_reader.read_to_end(&mut data);
+	serial_println!("{:?}", data.len());
+	let string = String::from_utf8(data);
+	serial_println!("{}", string.unwrap());
 
-	let directory_iter = DirectoryIter { reader: file_reader };
-	for item in directory_iter {
-		serial_println!("{:?}", item);
-	}
+	// 	let directory_iter = DirectoryIter { reader: file_reader };
+	// 	for item in directory_iter {
+	// 		serial_println!("{:?}", item);
+	// 	}
 }
 
 struct FileReader<'a> {

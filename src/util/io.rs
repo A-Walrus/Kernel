@@ -6,7 +6,10 @@ use core::{
 
 /// Error from IO
 #[derive(Debug)]
-pub enum IOError {}
+pub enum IOError {
+	/// Not enough bytes to read
+	NotEnoughBytes,
+}
 
 /// Trait allowing reading from a stream
 pub trait Read {
@@ -29,16 +32,35 @@ pub trait Read {
 		}
 	}
 
+	/// Fill the buffer exactly. Returns Err if not enough bytes.
+	fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), IOError> {
+		let result = self.read(buf);
+		match result {
+			Ok(len) => {
+				if len == buf.len() {
+					Ok(())
+				} else {
+					Err(IOError::NotEnoughBytes)
+				}
+			}
+			Err(e) => Err(e),
+		}
+	}
+
 	/// Read data into a struct.
 	/// # Safety
 	/// - Must make sure that the data in that part of the disk is valid for that type, otherwise
 	/// UB
 	// TODO make failable
 	#[inline(always)]
-	unsafe fn read_type<T>(&mut self) -> T {
+	unsafe fn read_type<T>(&mut self) -> Result<T, IOError> {
+		// const SIZE: usize = size_of::<T>();
 		let mut val: T = zeroed(); // TODO get rid of unnecessary zeroeization
 		let slice = &mut *(slice_from_raw_parts_mut(&mut val as *mut T as *mut u8, size_of::<T>()));
-		self.read(slice);
-		val
+		let result = self.read_exact(slice);
+		match result {
+			Ok(_) => Ok(val),
+			Err(e) => Err(e),
+		}
 	}
 }

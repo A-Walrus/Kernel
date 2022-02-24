@@ -107,7 +107,7 @@ struct BlockGroupDescriptor {
 	unallocated_blocks_in_group: u16,
 	unallocated_inodes_in_group: u16,
 	dirs_in_group: u16,
-	// _unused: [u8; 32 - 18],
+	_unused: [u8; 32 - 18],
 }
 
 #[repr(C)]
@@ -162,7 +162,7 @@ pub fn entry() {
 	serial_println!("Inodes in group: {}", super_block.inodes_in_blockgroup);
 	serial_println!("Size of inodes:  {}", super_block.inode_size);
 
-	let mut file_reader = FileReader::new(2, &super_block, &partition);
+	let file_reader = FileReader::new(1923, &super_block, &partition);
 	// let mut data = Vec::new();
 	// file_reader.read_to_end(&mut data);
 	// serial_println!("{:?}", data.len());
@@ -206,12 +206,14 @@ impl<'a> FileReader<'a> {
 	}
 
 	fn new(inode: u32, super_block: &SuperBlock, block_device: &'a Mutex<dyn BlockDevice>) -> Self {
+		let group = super_block.get_inode_blockgroup(inode);
 		let mut block_reader = BlockReader::new(
-			super_block.block_group_start_block(super_block.get_inode_blockgroup(inode)) as usize,
+			super_block.block_group_start_block(group) as usize,
 			super_block.sectors_per_block(),
 			0,
 			block_device,
 		);
+		block_reader.seek_forward(group as usize * size_of::<BlockGroupDescriptor>());
 
 		let block_group_desc: BlockGroupDescriptor = unsafe { block_reader.read_type().unwrap() };
 		serial_println!("{:?}", block_group_desc);

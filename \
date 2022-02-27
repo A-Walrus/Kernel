@@ -162,101 +162,53 @@ pub fn entry() {
 	serial_println!("Inodes in group: {}", super_block.inodes_in_blockgroup);
 	serial_println!("Size of inodes:  {}", super_block.inode_size);
 
-	let mut file_reader = FileReader::new(11, &super_block, &partition);
-	let mut data = Vec::new();
-	file_reader.read_to_end(&mut data);
-	serial_println!("{:?}", data.len());
-	let string = String::from_utf8(data);
-	serial_println!("{}", string.unwrap());
+	let file_reader = FileReader::new(1923, &super_block, &partition);
+	// let mut data = Vec::new();
+	// file_reader.read_to_end(&mut data);
+	// serial_println!("{:?}", data.len());
+	// let string = String::from_utf8(data);
+	// serial_println!("{}", string.unwrap());
 
-	// let directory_iter = DirectoryIter { reader: file_reader };
-	// for item in directory_iter {
-	// 	serial_println!("{:?}", item);
-	// }
+	let directory_iter = DirectoryIter { reader: file_reader };
+	for item in directory_iter {
+		serial_println!("{:?}", item);
+	}
 }
 
-struct InodeBlockIter<'a> {
+struct InodeBlockIter {
 	blocks: [VecDeque<u32>; 4],
+}
+
+struct FileReader<'a, 'b> {
 	inode_data: InodeData,
 	reader: BlockReader<'a>,
+	position: usize,
+	inode_block_iter: InodeBlockIter<'b>,
 }
 
-impl<'a> InodeBlockIter<'a> {
-	fn get_next_block_of(&mut self, level: usize) -> Option<u32> {
+impl<'a> FileReader<'a> {
+	fn get_next_block(&mut self) -> u32 {
+		self.get_next_block_of(0)
+	}
+
+	fn get_next_block_of(&mut self, level: usize) -> u32 {
 		match self.blocks[level].pop_front() {
-			Some(0) => None,
-			Some(block) => Some(block),
+			Some(block) => block,
 			None => {
 				let block = self.get_next_block_of(level + 1);
-				match block {
-					Some(block) => {
-						let slice = self.reader.read_block(block);
-						let sub_blocks;
-						unsafe {
-							sub_blocks = slice_from_raw_parts(slice.as_ptr() as *const u32, slice.len() / 4)
-								.as_ref()
-								.unwrap();
-							self.blocks[level].extend(sub_blocks);
-						}
-						let new_block = self.blocks[level].pop_front().unwrap();
-						assert_ne!(new_block, 0);
-						Some(new_block)
-					}
-					None => None,
+				let slice = self.reader.read_block(block);
+				let sub_blocks;
+				unsafe {
+					sub_blocks = slice_from_raw_parts(slice.as_ptr() as *const u32, slice.len() / 4)
+						.as_ref()
+						.unwrap();
+					self.blocks[level].extend(sub_blocks);
 				}
+				self.blocks[level].pop_front().unwrap()
 			}
 		}
 	}
 
-	fn new(inode_data: InodeData, reader: BlockReader<'a>) -> Self {
-		let direct = inode_data.direct_block_pointers;
-		let indirect = inode_data.singly_indirect_pointer;
-		let double_indirect = inode_data.doubly_indirect_pointer;
-		let triple_indirect = inode_data.triply_indirect_pointer;
-		let direct_blocks = VecDeque::from(direct);
-		let singly_indirect_blocks = if indirect == 0 {
-			VecDeque::new()
-		} else {
-			VecDeque::from([indirect])
-		};
-		let doubly_indirect_blocks = if indirect == 0 {
-			VecDeque::new()
-		} else {
-			VecDeque::from([double_indirect])
-		};
-		let tripy_indirect_blocks = if indirect == 0 {
-			VecDeque::new()
-		} else {
-			VecDeque::from([triple_indirect])
-		};
-		Self {
-			inode_data,
-			blocks: [
-				direct_blocks,
-				singly_indirect_blocks,
-				doubly_indirect_blocks,
-				tripy_indirect_blocks,
-			],
-			reader,
-		}
-	}
-}
-
-impl Iterator for InodeBlockIter<'_> {
-	type Item = u32;
-	fn next(&mut self) -> Option<Self::Item> {
-		self.get_next_block_of(0)
-	}
-}
-
-struct FileReader<'a> {
-	inode_data: InodeData,
-	reader: BlockReader<'a>,
-	position: usize,
-	inode_block_iter: InodeBlockIter<'a>,
-}
-
-impl<'a> FileReader<'a> {
 	fn new(inode: u32, super_block: &SuperBlock, block_device: &'a Mutex<dyn BlockDevice>) -> Self {
 		let group = super_block.get_inode_blockgroup(inode);
 		let mut block_reader = BlockReader::new(
@@ -277,13 +229,22 @@ impl<'a> FileReader<'a> {
 
 		serial_println!("{:?}", inode_data);
 
-		let clone = block_reader.clone();
+		let direct_blocks = VecDeque::from(inode_data.direct_block_pointers);
+		let singly_indirect_blocks = VecDeque::from([inode_data.singly_indirect_pointer]);
+		let doubly_indirect_blocks = VecDeque::from([inode_data.doubly_indirect_pointer]);
+		let tripy_indirect_blocks = VecDeque::from([inode_data.triply_indirect_pointer]);
+
 		// TODO possibly move reader?
 		Self {
 			inode_data,
 			reader: block_reader,
 			position: 0,
-			inode_block_iter: InodeBlockIter::new(inode_data, clone),
+			blocks: [
+				direct_blocks,
+				singly_indirect_blocks,
+				doubly_indirect_blocks,
+				tripy_indirect_blocks,
+			],
 		}
 	}
 }
@@ -298,7 +259,7 @@ impl<'a> Read for FileReader<'a> {
 			let offset_in_block = self.position % block_size;
 			let to_read_from_block = min(left_to_read, block_size - offset_in_block);
 			if offset_in_block == 0 {
-				let next_block = self.inode_block_iter.next().unwrap();
+				let next_block = self.get_next_block();
 				block = self.reader.read_block(next_block);
 			}
 			buf[..to_read_from_block].copy_from_slice(&block[offset_in_block..offset_in_block + to_read_from_block]);

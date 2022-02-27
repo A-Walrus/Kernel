@@ -68,6 +68,12 @@ pub struct UBuffer {
 	pub slice: *mut [u8],
 }
 
+impl Clone for UBuffer {
+	fn clone(&self) -> Self {
+		UBuffer::new(self.slice.len())
+	}
+}
+
 impl UBuffer {
 	/// Create a new uncached buffer of a given size on the heap
 	pub fn new(size: usize) -> Self {

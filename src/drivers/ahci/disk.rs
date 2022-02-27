@@ -14,6 +14,7 @@ use spin::Mutex;
 use super::{Port, Sector, SECTOR_SIZE};
 
 /// A struct that can browse and read sectors, with a similair interface to std::io
+#[derive(Clone)]
 pub struct BlockReader<'a> {
 	offset: usize,
 	block: usize,

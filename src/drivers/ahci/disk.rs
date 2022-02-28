@@ -1,6 +1,6 @@
 use crate::{
 	mem::heap::{UBox, UBuffer},
-	util::io::{IOError, Read},
+	util::io::{IOError, Read, Write},
 };
 use alloc::boxed::Box;
 use core::{
@@ -143,6 +143,45 @@ impl<'a> Read for BlockReader<'a> {
 		Ok(original_length) // TODO failable read
 	}
 }
+
+impl<'a> Write for BlockReader<'a> {
+	fn write(&mut self, mut buffer: &[u8]) -> Result<usize, IOError> {
+		let original_length = buffer.len();
+		while buffer.len() > 0 {
+			if self.offset == 0 {
+				self.read_current_block();
+				// 	if buffer.len() >= self.sectors_per_block * SECTOR_SIZE {
+				// 		self.block += 1;
+				// 	}
+			}
+			let len_available = SECTOR_SIZE * self.sectors_per_block - self.offset;
+			let len_to_take = min(len_available, buffer.len());
+			unsafe {
+				// serial_println!("{} {} {}", self.offset, len_to_take, len_available);
+				// buffer[..len_to_take]
+				// 	.copy_from_slice(&self.buffer.slice.as_mut().unwrap()[self.offset..(self.offset + len_to_take)]);
+				self.buffer.slice.as_mut().unwrap()[self.offset..(self.offset + len_to_take)]
+					.copy_from_slice(&buffer[..len_to_take]);
+			}
+			buffer = &buffer[len_to_take..];
+			// self.offset += len_to_take;
+			self.offset = if len_to_take == len_available {
+				self.write_current_block();
+				self.block += 1;
+				0
+			} else {
+				self.offset + len_to_take
+			};
+		}
+		Ok(original_length) // TODO failable write
+	}
+
+	fn flush(&mut self) -> Result<(), IOError> {
+		self.write_current_block();
+		Ok(())
+	}
+}
+
 /// Trait representing a block device.
 pub trait BlockDevice {
 	/// Will always return 512

@@ -16,7 +16,7 @@ fn undo_log_minus_10(num: u32) -> usize {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct SuperBlock {
 	inodes: u32,
 	blocks: u32,
@@ -105,8 +105,8 @@ struct BlockGroupDescriptor {
 	block_bitmap_addr: u32,
 	inode_bitmap_addr: u32,
 	inode_table_starting_address: u32,
-	unallocated_blocks_in_group: u16,
-	unallocated_inodes_in_group: u16,
+	unallocated_blocks: u16,
+	unallocated_inodes: u16,
 	dirs_in_group: u16,
 	_unused: [u8; 32 - 18],
 }
@@ -212,16 +212,16 @@ fn remove_inode(inode: u32, super_block: &SuperBlock, block_device: &Mutex<dyn B
 		let index_in_slice = inode_index_in_blockgroup as usize / 8;
 		// zero the corresponding bit
 		inode_bitmap[index_in_slice] &= !((1 << (inode_index_in_blockgroup % 8)) as u8);
-		// TODO write the slice back into the disk
 		block_reader.write_current_block();
 	}
 
+	let group = super_block.inode_blockgroup(inode);
+	let start_of_block_group = super_block.block_group_start_block(group);
+	let mut freed_blocks = 0;
 	// Mark blocks free in block bitmap
 	{
 		let block_bitmap = block_reader.read_block(block_group_desc.block_bitmap_addr);
-		let start_of_block_group = super_block.block_group_start_block(super_block.inode_blockgroup(inode));
 		// serial_println!("Start of block group {}", start_of_block_group);
-		let mut count = 0;
 		for block in block_iter {
 			// TODO figure out if and why +1 is correct
 			let block_index = block + 1 - start_of_block_group;
@@ -236,21 +236,34 @@ fn remove_inode(inode: u32, super_block: &SuperBlock, block_device: &Mutex<dyn B
 			assert!(
 				(block_bitmap[index_in_slice] >> (block_index % 8)) % 2 == 1,
 				"Freeing free block? at block {}: {}",
-				count,
+				freed_blocks,
 				block
 			);
 
 			// zero the corresponding bit
 			block_bitmap[index_in_slice] &= !((1 << (block_index % 8)) as u8);
-			count += 1;
+			freed_blocks += 1;
 		}
 		block_reader.write_current_block();
-		serial_println!("Blocks freed: {}", count);
+		serial_println!("Blocks freed: {}", freed_blocks);
 	}
 
-	// TODO fix block group descriptor (free inode count, free block count)
+	// fix block group descriptor (free inode count, free block count)
+	block_reader.move_to_block(start_of_block_group as usize);
+	block_reader.seek_forward(group as usize * size_of::<BlockGroupDescriptor>());
+	let mut new_descriptor = block_group_desc;
+	new_descriptor.unallocated_blocks += freed_blocks as u16;
+	new_descriptor.unallocated_inodes += 1;
+	block_reader.write_type(&new_descriptor);
+	block_reader.flush();
 
-	// TODO fix superblock (free inode count, free block count)
+	// fix superblock (free inode count, free block count)
+	let mut new_superblock: SuperBlock = *super_block;
+	new_superblock.unallocated_inodes += 1;
+	new_superblock.unallocated_blocks += freed_blocks;
+	let mut sector_reader = BlockReader::new(2, 1, 0, block_device);
+	sector_reader.write_type(&new_superblock);
+	sector_reader.flush();
 }
 
 struct InodeBlockIter<'a, const WITHPARENTS: bool> {

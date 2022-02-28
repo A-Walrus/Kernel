@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use core::{
 	mem::{size_of, zeroed},
-	ptr::slice_from_raw_parts_mut,
+	ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
 };
 
 /// Error from IO
@@ -51,7 +51,6 @@ pub trait Read {
 	/// # Safety
 	/// - Must make sure that the data in that part of the disk is valid for that type, otherwise
 	/// UB
-	// TODO make failable
 	#[inline(always)]
 	unsafe fn read_type<T>(&mut self) -> Result<T, IOError> {
 		// const SIZE: usize = size_of::<T>();
@@ -62,5 +61,38 @@ pub trait Read {
 			Ok(_) => Ok(val),
 			Err(e) => Err(e),
 		}
+	}
+}
+
+/// Trait allowing writing to a stream
+pub trait Write {
+	/// Write to stream
+	fn write(&mut self, buf: &[u8]) -> Result<usize, IOError>;
+
+	/// Flush this output stream, ensuring that all intended contents reach their destination
+	fn flush(&mut self) -> Result<(), IOError>;
+
+	/// Write from the buffer exactly. Returns Err if not enough bytes.
+	fn write_exact(&mut self, buf: &[u8]) -> Result<(), IOError> {
+		let result = self.write(buf);
+		match result {
+			Ok(len) => {
+				if len == buf.len() {
+					Ok(())
+				} else {
+					Err(IOError::NotEnoughBytes)
+				}
+			}
+			Err(e) => Err(e),
+		}
+	}
+
+	/// Write data from a struct to the disk.
+	#[inline(always)]
+	fn write_type<T>(&mut self, value: &T) -> Result<(), IOError> {
+		let typed_ptr: *const T = value;
+		let ptr = typed_ptr as *const u8;
+		// Sound because any value is valid for a u8
+		unsafe { self.write_exact(slice_from_raw_parts(ptr, size_of::<T>()).as_ref().unwrap()) }
 	}
 }

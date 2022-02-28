@@ -58,6 +58,22 @@ impl<'a> BlockReader<'a> {
 			.read_sectors(self.block * self.sectors_per_block, slice);
 	}
 
+	/// Write the current block to the disk
+	pub fn write_current_block(&mut self) {
+		let slice;
+		unsafe {
+			// slice = slice_from_raw_parts_mut(self.buffer.ptr as *mut Sector, self.sectors_per_block)
+			// 	.as_mut()
+			// 	.unwrap();
+			slice = slice_from_raw_parts_mut(self.buffer.slice as *mut Sector, self.sectors_per_block)
+				.as_mut()
+				.unwrap();
+		}
+		self.block_device
+			.lock()
+			.write_sectors(self.block * self.sectors_per_block, slice);
+	}
+
 	/// Move the "cursor" forward some offset of bytes, possibly crossing sectors and block
 	/// boundaries
 	pub fn seek_forward(&mut self, offset: usize) {
@@ -71,10 +87,10 @@ impl<'a> BlockReader<'a> {
 	}
 
 	/// Read the block into the buffer and return a slice to it
-	pub fn read_block(&mut self, block: u32) -> &[u8] {
+	pub fn read_block(&mut self, block: u32) -> &mut [u8] {
 		self.move_to_block(block as usize);
 		self.read_current_block();
-		self.slice()
+		self.mut_slice()
 	}
 
 	/// Move to block

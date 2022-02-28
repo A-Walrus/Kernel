@@ -80,7 +80,7 @@ impl SuperBlock {
 		self.block_size() / 512
 	}
 
-	fn get_inode_blockgroup(&self, inode: u32) -> u32 {
+	fn inode_blockgroup(&self, inode: u32) -> u32 {
 		(inode - 1) / self.inodes_in_blockgroup
 	}
 
@@ -90,7 +90,8 @@ impl SuperBlock {
 
 	fn block_group_start_block(&self, group: u32) -> u32 {
 		let start = if self.log_block_size_minus_10 == 0 { 2 } else { 1 };
-		group * self.blocks_in_blockgroup + start
+		serial_println!("Start {}", start);
+		(group * self.blocks_in_blockgroup) + start
 	}
 
 	fn block_to_sector(&self, block: u32) -> usize {
@@ -101,8 +102,8 @@ impl SuperBlock {
 #[repr(C)]
 #[derive(Debug)]
 struct BlockGroupDescriptor {
-	block_usage_bitmap_address: u32,
-	inode_usage_bitmap_address: u32,
+	block_bitmap_addr: u32,
+	inode_bitmap_addr: u32,
 	inode_table_starting_address: u32,
 	unallocated_blocks_in_group: u16,
 	unallocated_inodes_in_group: u16,
@@ -143,8 +144,6 @@ struct DirectoryEntry {
 	total_entry_size: u16,
 	name_length_low: u8,
 	type_indicator: u8,
-	// name: () // TODO figure out how to represent the entries (not a fixed size 😡 ), and how to
-	// represent a "list" of them, probably add iterator interface for convinience
 }
 
 /// Temporary entry point
@@ -160,35 +159,114 @@ pub fn entry() {
 	super_block.check_signature().expect("Invalid ext signature!");
 	serial_println!("Block size: {}", super_block.block_size());
 	serial_println!("Inodes in group: {}", super_block.inodes_in_blockgroup);
+	serial_println!("Blocks in group: {}", super_block.blocks_in_blockgroup);
 	serial_println!("Size of inodes:  {}", super_block.inode_size);
 
-	let mut file_reader = FileReader::new(11, &super_block, &partition);
-	let mut data = Vec::new();
-	file_reader.read_to_end(&mut data);
-	serial_println!("{:?}", data.len());
-	let string = String::from_utf8(data);
-	serial_println!("{}", string.unwrap());
+	// let mut file_reader = FileReader::new(1922, &super_block, &partition);
+	// let mut data = Vec::new();
+	// file_reader.read_to_end(&mut data);
+	// serial_println!("{:?}", data.len());
+	// let string = String::from_utf8(data);
+	// serial_println!("{}", string.unwrap());
 
 	// let directory_iter = DirectoryIter { reader: file_reader };
 	// for item in directory_iter {
 	// 	serial_println!("{:?}", item);
 	// }
+	remove_inode(11, &super_block, &partition);
 }
 
-struct InodeBlockIter<'a> {
+fn get_inode_data<'a>(
+	inode: u32,
+	super_block: &'a SuperBlock,
+	block_device: &'a Mutex<dyn BlockDevice>,
+) -> (BlockGroupDescriptor, InodeData, BlockReader<'a>) {
+	let group = super_block.inode_blockgroup(inode);
+	let mut block_reader = BlockReader::new(
+		super_block.block_group_start_block(group) as usize,
+		super_block.sectors_per_block(),
+		0,
+		block_device,
+	);
+
+	block_reader.seek_forward(group as usize * size_of::<BlockGroupDescriptor>());
+
+	let block_group_desc: BlockGroupDescriptor = unsafe { block_reader.read_type().unwrap() };
+	serial_println!("{:?}", block_group_desc);
+	serial_println!("");
+	block_reader.move_to_block(block_group_desc.inode_table_starting_address as usize);
+	block_reader.seek_forward(super_block.inode_index_in_blockgroup(inode) as usize * super_block.inode_size as usize);
+	let inode_data: InodeData = unsafe { block_reader.read_type().unwrap() };
+	(block_group_desc, inode_data, block_reader)
+}
+
+fn remove_inode(inode: u32, super_block: &SuperBlock, block_device: &Mutex<dyn BlockDevice>) {
+	let (block_group_desc, inode_data, mut block_reader) = get_inode_data(inode, super_block, block_device);
+	serial_println!("{:?}", inode_data);
+	let block_iter: InodeBlockIter<true> = InodeBlockIter::new(inode_data, block_reader.clone());
+
+	// Mark inode free in inode bitmap
+	{
+		let inode_bitmap = block_reader.read_block(block_group_desc.inode_bitmap_addr);
+		let inode_index_in_blockgroup = super_block.inode_index_in_blockgroup(inode);
+		let index_in_slice = inode_index_in_blockgroup as usize / 8;
+		// zero the corresponding bit
+		inode_bitmap[index_in_slice] &= !((1 << (inode_index_in_blockgroup % 8)) as u8);
+		// TODO write the slice back into the disk
+		block_reader.write_current_block();
+	}
+
+	// Mark blocks free in block bitmap
+	{
+		let block_bitmap = block_reader.read_block(block_group_desc.block_bitmap_addr);
+		let start_of_block_group = super_block.block_group_start_block(super_block.inode_blockgroup(inode));
+		// serial_println!("Start of block group {}", start_of_block_group);
+		let mut count = 0;
+		for block in block_iter {
+			// TODO figure out if and why +1 is correct
+			let block_index = block + 1 - start_of_block_group;
+
+			assert!(
+				block_index < super_block.blocks_in_blockgroup,
+				"Trying to free block in another group"
+			);
+
+			let index_in_slice = block_index as usize / 8;
+
+			assert!(
+				(block_bitmap[index_in_slice] >> (block_index % 8)) % 2 == 1,
+				"Freeing free block? at block {}: {}",
+				count,
+				block
+			);
+
+			// zero the corresponding bit
+			block_bitmap[index_in_slice] &= !((1 << (block_index % 8)) as u8);
+			count += 1;
+		}
+		block_reader.write_current_block();
+		serial_println!("Blocks freed: {}", count);
+	}
+
+	// TODO fix block group descriptor (free inode count, free block count)
+
+	// TODO fix superblock (free inode count, free block count)
+}
+
+struct InodeBlockIter<'a, const WITHPARENTS: bool> {
 	blocks: [VecDeque<u32>; 4],
 	inode_data: InodeData,
 	reader: BlockReader<'a>,
 }
 
-impl<'a> InodeBlockIter<'a> {
+impl<'a, const WITHPARENTS: bool> InodeBlockIter<'a, WITHPARENTS> {
 	fn get_next_block_of(&mut self, level: usize) -> Option<u32> {
 		match self.blocks[level].pop_front() {
 			Some(0) => None,
 			Some(block) => Some(block),
 			None => {
-				let block = self.get_next_block_of(level + 1);
-				match block {
+				let parent = self.get_next_block_of(level + 1);
+				match parent {
 					Some(block) => {
 						let slice = self.reader.read_block(block);
 						let sub_blocks;
@@ -198,9 +276,13 @@ impl<'a> InodeBlockIter<'a> {
 								.unwrap();
 							self.blocks[level].extend(sub_blocks);
 						}
-						let new_block = self.blocks[level].pop_front().unwrap();
-						assert_ne!(new_block, 0);
-						Some(new_block)
+						if WITHPARENTS {
+							parent
+						} else {
+							let new_block = self.blocks[level].pop_front().unwrap();
+							assert_ne!(new_block, 0);
+							Some(new_block)
+						}
 					}
 					None => None,
 				}
@@ -242,7 +324,7 @@ impl<'a> InodeBlockIter<'a> {
 	}
 }
 
-impl Iterator for InodeBlockIter<'_> {
+impl<const WITHPARENTS: bool> Iterator for InodeBlockIter<'_, WITHPARENTS> {
 	type Item = u32;
 	fn next(&mut self) -> Option<Self::Item> {
 		self.get_next_block_of(0)
@@ -253,32 +335,15 @@ struct FileReader<'a> {
 	inode_data: InodeData,
 	reader: BlockReader<'a>,
 	position: usize,
-	inode_block_iter: InodeBlockIter<'a>,
+	inode_block_iter: InodeBlockIter<'a, false>,
 }
 
 impl<'a> FileReader<'a> {
-	fn new(inode: u32, super_block: &SuperBlock, block_device: &'a Mutex<dyn BlockDevice>) -> Self {
-		let group = super_block.get_inode_blockgroup(inode);
-		let mut block_reader = BlockReader::new(
-			super_block.block_group_start_block(group) as usize,
-			super_block.sectors_per_block(),
-			0,
-			block_device,
-		);
-		block_reader.seek_forward(group as usize * size_of::<BlockGroupDescriptor>());
-
-		let block_group_desc: BlockGroupDescriptor = unsafe { block_reader.read_type().unwrap() };
-		serial_println!("{:?}", block_group_desc);
-		serial_println!("");
-		block_reader.move_to_block(block_group_desc.inode_table_starting_address as usize);
-		block_reader
-			.seek_forward(super_block.inode_index_in_blockgroup(inode) as usize * super_block.inode_size as usize);
-		let inode_data: InodeData = unsafe { block_reader.read_type().unwrap() };
-
+	fn new(inode: u32, super_block: &'a SuperBlock, block_device: &'a Mutex<dyn BlockDevice>) -> Self {
+		let (_, inode_data, block_reader) = get_inode_data(inode, super_block, block_device);
 		serial_println!("{:?}", inode_data);
 
 		let clone = block_reader.clone();
-		// TODO possibly move reader?
 		Self {
 			inode_data,
 			reader: block_reader,

@@ -162,18 +162,44 @@ pub fn entry() {
 	serial_println!("Blocks in group: {}", super_block.blocks_in_blockgroup);
 	serial_println!("Size of inodes:  {}", super_block.inode_size);
 
-	// let mut file_reader = FileReader::new(1922, &super_block, &partition);
-	// let mut data = Vec::new();
-	// file_reader.read_to_end(&mut data);
-	// serial_println!("{:?}", data.len());
-	// let string = String::from_utf8(data);
-	// serial_println!("{}", string.unwrap());
+	let path = "/foo/file.txt";
+
+	let alice_inode = find_path_inode(path, &super_block, &partition).unwrap();
+	serial_println!("{:?}", alice_inode);
+
+	let mut file_reader = FileReader::new(alice_inode, &super_block, &partition);
+	let mut data = Vec::new();
+	file_reader.read_to_end(&mut data);
+	let string = String::from_utf8(data);
+	serial_println!("{}", string.unwrap());
 
 	// let directory_iter = DirectoryIter { reader: file_reader };
 	// for item in directory_iter {
 	// 	serial_println!("{:?}", item);
 	// }
-	remove_inode(11, &super_block, &partition);
+	// remove_inode(11, &super_block, &partition);
+}
+
+fn find_path_inode(path: &str, super_block: &SuperBlock, device: &Mutex<dyn BlockDevice>) -> Option<u32> {
+	let mut split = path.split("/");
+
+	// Get rid of empty string before the first /
+	split.next();
+	// Root Inode
+	let mut inode = 2;
+	for name in split {
+		let file_reader = FileReader::new(inode, super_block, device);
+		let mut directory_iter = DirectoryIter { reader: file_reader };
+		let result = directory_iter.find(|(entry, entryname)| name == entryname);
+		match result {
+			None => return None,
+			Some((entry, _)) => {
+				inode = entry.inode;
+			}
+		}
+	}
+
+	Some(inode)
 }
 
 fn get_inode_data<'a>(

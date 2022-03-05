@@ -88,14 +88,14 @@ impl<'a> BlockReader<'a> {
 
 	/// Read the block into the buffer and return a slice to it
 	pub fn read_block(&mut self, block: u32) -> &mut [u8] {
-		self.move_to_block(block as usize);
+		self.move_to_block(block);
 		self.get_current_block();
 		self.mut_slice()
 	}
 
 	/// Move to block
-	pub fn move_to_block(&mut self, block: usize) {
-		self.block = block;
+	pub fn move_to_block(&mut self, block: u32) {
+		self.block = block as usize;
 		self.offset = 0;
 	}
 

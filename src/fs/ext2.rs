@@ -90,8 +90,8 @@ impl SuperBlock {
 		(group * self.blocks_in_blockgroup) + start
 	}
 
-	fn num_blockgroups(&self) -> usize {
-		(self.blocks / self.blocks_in_blockgroup) as usize
+	fn num_blockgroups(&self) -> u32 {
+		self.blocks / self.blocks_in_blockgroup
 	}
 }
 
@@ -158,30 +158,83 @@ pub fn entry() {
 	serial_println!("Blocks in group: {}", super_block.blocks_in_blockgroup);
 	serial_println!("Size of inodes:  {}", super_block.inode_size);
 
-	let path = "/books/alice.txt";
+	let free = find_free_inode(&super_block, &partition);
+	serial_println!("Free inode: {:?}", free);
 
-	let alice_inode = find_path_inode(path, &super_block, &partition).unwrap();
-	serial_println!("{:?}", alice_inode);
+	// let path = "/books/alice.txt";
 
-	let mut file_reader = FileReader::new(alice_inode, &super_block, &partition);
-	let mut data = Vec::new();
-	file_reader.read_to_end(&mut data);
-	let string = String::from_utf8(data);
-	serial_println!("{}", string.unwrap());
+	// let alice_inode = find_path_inode(path, &super_block, &partition).unwrap();
+	// serial_println!("{:?}", alice_inode);
 
-	// let directory_iter = DirectoryIter { reader: file_reader };
-	// for item in directory_iter {
-	// 	serial_println!("{:?}", item);
-	// }
-	// remove_inode(11, &super_block, &partition);
+	// let mut file_reader = FileReader::new(alice_inode, &super_block, &partition);
+	// let mut data = Vec::new();
+	// file_reader.read_to_end(&mut data);
+	// let string = String::from_utf8(data);
+	// serial_println!("{}", string.unwrap());
+
+	let file_reader = FileReader::new(2, &super_block, &partition);
+	let directory_iter = DirectoryIter { reader: file_reader };
+	for item in directory_iter {
+		serial_println!("{:?}", item);
+	}
 }
 
-fn find_free_inode(super_block: &SuperBlock) -> u32 {
-	for blockgroup in 0..super_block.num_blockgroups() {
-		// check if it has any free inodes
+fn find_free_inode(super_block: &SuperBlock, device: &Mutex<dyn BlockDevice>) -> Option<u32> {
+	for group in 0..super_block.num_blockgroups() {
+		let mut block_reader = BlockReader::new(
+			super_block.block_group_start_block(group) as usize,
+			super_block.sectors_per_block(),
+			0,
+			device,
+		);
+
+		block_reader.seek(SeekFrom::Current(
+			(group as usize * size_of::<BlockGroupDescriptor>()) as isize,
+		));
+
+		let mut block_group_desc: BlockGroupDescriptor = unsafe { block_reader.read_type().unwrap() };
+		let free = block_group_desc.unallocated_inodes;
+		if free == 0 {
+			break;
+		} else {
+			// Remove the inode from free
+			block_group_desc.unallocated_inodes -= 1;
+			block_reader.seek(SeekFrom::Current(-(size_of::<BlockGroupDescriptor>() as isize)));
+			block_reader.write_type(&block_group_desc);
+			block_reader.flush();
+
+			let mut new_superblock: SuperBlock = *super_block;
+			new_superblock.unallocated_inodes -= 1;
+			let mut sector_reader = BlockReader::new(2, 1, 0, device);
+			sector_reader.write_type(&new_superblock);
+			sector_reader.flush();
+
+			block_reader.move_to_block(block_group_desc.inode_bitmap_addr);
+			for i in 0..super_block.block_size() / 8 {
+				let int: u8 = unsafe { block_reader.read_type().unwrap() };
+				if int == u8::MAX {
+					continue;
+				}
+
+				let mut val = int;
+				for j in 0..8 {
+					if val % 2 == 0 {
+						// found
+						block_reader.seek(SeekFrom::Current(-1));
+						let new_int = int | (1 << j);
+						block_reader.write_type(&new_int);
+						block_reader.flush();
+
+						return Some(((i * 8) + j + 1) as u32);
+					} else {
+						val = val >> 1;
+					}
+				}
+			}
+		}
 	}
 
-	unimplemented!();
+	None
 }
 
 fn find_path_inode(path: &str, super_block: &SuperBlock, device: &Mutex<dyn BlockDevice>) -> Option<u32> {
@@ -226,7 +279,7 @@ fn get_inode_data<'a>(
 	let block_group_desc: BlockGroupDescriptor = unsafe { block_reader.read_type().unwrap() };
 	serial_println!("{:?}", block_group_desc);
 	serial_println!("");
-	block_reader.move_to_block(block_group_desc.inode_table_starting_address as usize);
+	block_reader.move_to_block(block_group_desc.inode_table_starting_address);
 	block_reader.seek(SeekFrom::Current(
 		(super_block.inode_index_in_blockgroup(inode) as usize * super_block.inode_size as usize) as isize,
 	));
@@ -283,7 +336,7 @@ fn remove_inode(inode: u32, super_block: &SuperBlock, block_device: &Mutex<dyn B
 	}
 
 	// fix block group descriptor (free inode count, free block count)
-	block_reader.move_to_block(start_of_block_group as usize);
+	block_reader.move_to_block(start_of_block_group);
 	block_reader.seek(SeekFrom::Current(
 		(group as usize * size_of::<BlockGroupDescriptor>()) as isize,
 	));

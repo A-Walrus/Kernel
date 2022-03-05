@@ -1,6 +1,6 @@
 use crate::{
 	mem::heap::{UBox, UBuffer},
-	util::io::{IOError, Read, Write},
+	util::io::{IOError, Read, Seek, SeekFrom, Write},
 };
 use alloc::boxed::Box;
 use core::{
@@ -20,6 +20,7 @@ pub struct BlockReader<'a> {
 	block: usize,
 	sectors_per_block: usize,
 	buffer: UBuffer,
+	block_in_buffer: Option<usize>,
 	block_device: &'a Mutex<dyn BlockDevice>,
 }
 
@@ -37,13 +38,24 @@ impl<'a> BlockReader<'a> {
 			block,
 			sectors_per_block,
 			block_device,
+			block_in_buffer: None,
 			buffer: UBuffer::new(sectors_per_block * SECTOR_SIZE),
+		}
+	}
+
+	fn get_current_block(&mut self) {
+		match self.block_in_buffer {
+			None => self.read_current_block(),
+			Some(block) => {
+				if block != self.block {
+					self.read_current_block()
+				}
+			}
 		}
 	}
 
 	/// Read the current block into the buffer
 	fn read_current_block(&mut self) {
-		serial_println!("Reading block: {}, of size: {}", self.block, self.sectors_per_block);
 		let slice;
 		unsafe {
 			// slice = slice_from_raw_parts_mut(self.buffer.ptr as *mut Sector, self.sectors_per_block)
@@ -74,22 +86,10 @@ impl<'a> BlockReader<'a> {
 			.write_sectors(self.block * self.sectors_per_block, slice);
 	}
 
-	/// Move the "cursor" forward some offset of bytes, possibly crossing sectors and block
-	/// boundaries
-	pub fn seek_forward(&mut self, offset: usize) {
-		let new_offset = (self.offset + offset) % (self.sectors_per_block * SECTOR_SIZE);
-		let block_offset = (self.offset + offset) / (self.sectors_per_block * SECTOR_SIZE);
-		self.block += block_offset;
-		if (self.offset == 0 || block_offset != 0) && new_offset != 0 {
-			self.read_current_block();
-		}
-		self.offset = new_offset;
-	}
-
 	/// Read the block into the buffer and return a slice to it
 	pub fn read_block(&mut self, block: u32) -> &mut [u8] {
 		self.move_to_block(block as usize);
-		self.read_current_block();
+		self.get_current_block();
 		self.mut_slice()
 	}
 
@@ -114,17 +114,36 @@ impl<'a> BlockReader<'a> {
 	// }
 }
 
+impl<'a> Seek for BlockReader<'a> {
+	fn seek(&mut self, pos: SeekFrom) -> Result<usize, IOError> {
+		match pos {
+			SeekFrom::Start(offset) => {
+				self.block = offset / (self.sectors_per_block * SECTOR_SIZE);
+				self.offset = offset % (self.sectors_per_block * SECTOR_SIZE);
+				Ok(offset) // TODO make failable
+			}
+			SeekFrom::Current(offset) => {
+				let new_offset = (self.offset as isize + offset)
+					.rem_euclid((self.sectors_per_block * SECTOR_SIZE) as isize) as usize;
+				let block_offset = (self.offset as isize + offset) / (self.sectors_per_block * SECTOR_SIZE) as isize;
+				self.block = (self.block as isize + block_offset) as usize;
+				self.offset = new_offset;
+				Ok(self.block * self.sectors_per_block * SECTOR_SIZE + self.offset)
+			}
+			SeekFrom::End(_offset) => {
+				unimplemented!()
+			}
+		}
+	}
+}
+
 impl<'a> Read for BlockReader<'a> {
 	/// Fill the buffer with bytes red from the current location
 	fn read(&mut self, mut buffer: &mut [u8]) -> Result<usize, IOError> {
 		let original_length = buffer.len();
 		while buffer.len() > 0 {
-			if self.offset == 0 {
-				self.read_current_block();
-				if buffer.len() >= self.sectors_per_block * SECTOR_SIZE {
-					self.block += 1;
-				}
-			}
+			self.get_current_block();
+
 			let len_available = SECTOR_SIZE * self.sectors_per_block - self.offset;
 			let len_to_take = min(len_available, buffer.len());
 			unsafe {
@@ -135,6 +154,7 @@ impl<'a> Read for BlockReader<'a> {
 			buffer = &mut buffer[len_to_take..];
 			// self.offset += len_to_take;
 			self.offset = if len_to_take == len_available {
+				self.block += 1;
 				0
 			} else {
 				self.offset + len_to_take
@@ -148,12 +168,7 @@ impl<'a> Write for BlockReader<'a> {
 	fn write(&mut self, mut buffer: &[u8]) -> Result<usize, IOError> {
 		let original_length = buffer.len();
 		while buffer.len() > 0 {
-			if self.offset == 0 {
-				self.read_current_block();
-				// 	if buffer.len() >= self.sectors_per_block * SECTOR_SIZE {
-				// 		self.block += 1;
-				// 	}
-			}
+			self.get_current_block();
 			let len_available = SECTOR_SIZE * self.sectors_per_block - self.offset;
 			let len_to_take = min(len_available, buffer.len());
 			unsafe {

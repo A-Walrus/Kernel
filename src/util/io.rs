@@ -96,3 +96,25 @@ pub trait Write {
 		unsafe { self.write_exact(slice_from_raw_parts(ptr, size_of::<T>()).as_ref().unwrap()) }
 	}
 }
+
+/// Different ways to define a position to seek to
+pub enum SeekFrom {
+	/// Offset from start
+	Start(usize),
+	/// Offset from end (should be negative)
+	End(isize),
+	/// Offset from the current position
+	Current(isize),
+}
+
+/// Trait allowing the movement of a cursor through a stream
+pub trait Seek {
+	/// Move the cursor to the position specified through the pos
+	fn seek(&mut self, pos: SeekFrom) -> Result<usize, IOError>;
+
+	/// Move to start of stream
+	fn rewind(&mut self) -> Result<(), IOError> {
+		self.seek(SeekFrom::Start(0))?;
+		Ok(())
+	}
+}

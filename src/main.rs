@@ -5,7 +5,7 @@ extern crate alloc;
 use bootloader::{entry_point, BootInfo};
 use kernel::{
 	cpu::{gdt, interrupts},
-	fs::ext2::{self, entry},
+	fs::ext2,
 	io::buffer,
 	mem::{buddy, heap, paging},
 	serial_println,
@@ -28,7 +28,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		unsafe {
 			buffer::TERM = Some(term);
 		}
-		entry();
+		ext2::setup();
+		// TODO do stuff here
+		ext2::cleanup();
 	}
 	loop {}
 }

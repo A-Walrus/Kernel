@@ -5,10 +5,12 @@ use core::{
 };
 
 /// Error from IO
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum IOError {
 	/// Not enough bytes to read
 	NotEnoughBytes,
+	/// Other error
+	Other,
 }
 
 /// Trait allowing reading from a stream

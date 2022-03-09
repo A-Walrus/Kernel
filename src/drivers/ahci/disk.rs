@@ -43,6 +43,7 @@ impl<'a> BlockReader<'a> {
 		}
 	}
 
+	/// Get the current block
 	fn get_current_block(&mut self) {
 		match self.block_in_buffer {
 			None => self.read_current_block(),
@@ -95,6 +96,7 @@ impl<'a> BlockReader<'a> {
 
 	/// Move to block
 	pub fn move_to_block(&mut self, block: u32) {
+		// self.flush();
 		self.block = block as usize;
 		self.offset = 0;
 	}
@@ -116,6 +118,7 @@ impl<'a> BlockReader<'a> {
 
 impl<'a> Seek for BlockReader<'a> {
 	fn seek(&mut self, pos: SeekFrom) -> Result<usize, IOError> {
+		// self.flush()?;
 		match pos {
 			SeekFrom::Start(offset) => {
 				self.block = offset / (self.sectors_per_block * SECTOR_SIZE);
@@ -194,6 +197,12 @@ impl<'a> Write for BlockReader<'a> {
 	fn flush(&mut self) -> Result<(), IOError> {
 		self.write_current_block();
 		Ok(())
+	}
+}
+
+impl<'a> Drop for BlockReader<'a> {
+	fn drop(&mut self) {
+		// self.flush();
 	}
 }
 

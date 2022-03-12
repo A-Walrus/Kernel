@@ -6,7 +6,7 @@ use crate::{
 use alloc::{
 	collections::VecDeque,
 	str,
-	string::{FromUtf8Error, String},
+	string::{FromUtf8Error, String, ToString},
 	vec::Vec,
 };
 use core::{
@@ -136,11 +136,42 @@ struct BlockGroupDescriptor {
 	_unused: [u8; 32 - 18],
 }
 
+#[repr(u8)]
+#[derive(Debug, Copy, Clone)]
+enum Type {
+	Fifo = 5,
+	CharacterDevice = 3,
+	Directory = 2,
+	BlockDevice = 4,
+	RegularFile = 1,
+	SymbolicLink = 7,
+	UnixSocket = 6,
+	Other = 0,
+}
+
+#[derive(Debug, Copy, Clone)]
+struct TypeAndPermissions(u16);
+
+impl TypeAndPermissions {
+	fn inode_type(&self) -> Type {
+		match self.0 >> 12 {
+			0x1 => Type::Fifo,
+			0x2 => Type::CharacterDevice,
+			0x4 => Type::Directory,
+			0x6 => Type::BlockDevice,
+			0x8 => Type::RegularFile,
+			0xA => Type::SymbolicLink,
+			0xC => Type::UnixSocket,
+			_ => Type::Other,
+		}
+	}
+}
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 /// Literal structure found on disk, the inode
 struct InodeData {
-	type_and_permissions: u16,
+	type_and_permissions: TypeAndPermissions,
 	user_id: u16,
 	size_lower: u32,
 	last_access_time: u32,
@@ -170,7 +201,7 @@ struct DirectoryEntry {
 	inode: Inode,
 	total_entry_size: u16,
 	name_length_low: u8,
-	type_indicator: u8,
+	type_indicator: Type,
 }
 
 /// Some ext fields store their log minus 10, this undos that operation.
@@ -550,6 +581,42 @@ impl ExtBitMap {
 	}
 }
 
+/// Create a (hard) link to an Inode
+pub fn link(path: &str, inode: Inode) -> Result<(), Ext2Err> {
+	let index = path.rfind("/").unwrap();
+	let folder_path = &path[..index + 1];
+	let file_name = &path[index + 1..];
+
+	let dir_inode = path_to_inode(folder_path)?;
+
+	let mut parent_reader = FileReader::new(dir_inode);
+	let mut directory = Directory::read(&mut parent_reader)?;
+
+	if directory.entries.iter().find(|entry| entry.name == file_name).is_some() {
+		// File already exists
+		Err(FileAlreadyExists)
+	} else {
+		let mut ext = get_ext!().lock();
+		let inode_data = ext.get_inode_data_mut(inode);
+		inode_data.hard_link_count += 1;
+
+		directory.entries.push(Entry {
+			name: file_name.to_string(),
+			entry: DirectoryEntry {
+				inode,
+				total_entry_size: 0, // Doesn't matter, will get overwritten,
+				name_length_low: file_name.len() as u8,
+				type_indicator: inode_data.type_and_permissions.inode_type(),
+			},
+		});
+
+		parent_reader.rewind()?;
+		directory.write(&mut parent_reader)?;
+
+		Ok(())
+	}
+}
+
 /// Unlink a file, also called removing. If there are multiple hard links to the file, the
 /// other links will continue to be able to access it
 pub fn unlink(path: &str) -> Result<(), Ext2Err> {
@@ -586,7 +653,6 @@ pub fn unlink(path: &str) -> Result<(), Ext2Err> {
 	serial_println!("folder inode: {} ", dir_inode);
 
 	let mut parent_reader = FileReader::new(dir_inode);
-
 	let mut directory = Directory::read(&mut parent_reader)?;
 
 	let prev_len = directory.entries.len();
@@ -595,15 +661,7 @@ pub fn unlink(path: &str) -> Result<(), Ext2Err> {
 	assert!(new_len + 1 == prev_len);
 
 	parent_reader.rewind()?;
-
-	// // Hack until I actuall fix writing
-	// {
-	// 	let mut ext = get_ext!().lock();
-	// 	ext.get_inode_data_mut(dir_inode).size_lower = directory.write(&mut parent_reader)? as u32;
-	// }
 	directory.write(&mut parent_reader)?;
-
-	// parent_reader.flush()?;
 
 	Ok(())
 }
@@ -871,6 +929,8 @@ pub enum Ext2Err {
 	NotAbsolute,
 	/// The specified file path was not found
 	FileNotFound,
+	/// The file you are trying to create already exists
+	FileAlreadyExists,
 }
 
 impl From<IOError> for Ext2Err {
@@ -894,6 +954,9 @@ pub fn setup() -> Result<(), Ext2Err> {
 
 	let disk = Ext2::read_from_disk()?;
 	unsafe { EXT = Some(Mutex::new(disk)) }
+
+	// serial_println!("Root Inode: {:?}", get_ext!().lock().get_inode_data(ROOT_INODE));
+	// serial_println!("Alice Inode: {:?}", get_ext!().lock().get_inode_data(11));
 
 	// let mut alice_reader = FileReader::new(11);
 	// let mut data = Vec::new();
@@ -922,30 +985,11 @@ pub fn setup() -> Result<(), Ext2Err> {
 	// let string = String::from_utf8(data);
 	// serial_println!("{}", string.unwrap());
 
-	// {
-	// 	let mut dir_reader = FileReader::new(1928);
-	// 	dir_reader.write(b"alskfjelkfjalsdkf").expect("asdf");
-	// 	dir_reader.flush().expect("asdfasdf");
-
-	// 	serial_println!("Wrote rubbish into directory");
-	// }
 	unlink("/books/alice.txt").expect("Failed to unlink");
 	serial_println!("Unlink over");
 
-	// let mut dir_reader = FileReader::new(1928);
-	// let directory = Directory::read(&mut dir_reader)?;
-	// serial_println!("1928 dir: {:?}", directory);
-
-	// let inode = path_to_inode("/books/alice.txt");
-	// serial_println!("{:?}", inode);
-
-	// serial_println!("{}", inode);
-	// let mut alice_reader = FileReader::new(inode);
-
-	// let mut data = Vec::new();
-	// alice_reader.read_to_end(&mut data)?;
-	// let string = String::from_utf8(data);
-	// serial_println!("{}", string.unwrap());
+	link("/books/alice.txt", path_to_inode("/alice.txt").expect("Failed to find")).expect("Failed to link");
+	serial_println!("link over");
 
 	Ok(())
 }

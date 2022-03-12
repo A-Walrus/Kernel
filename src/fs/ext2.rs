@@ -165,6 +165,20 @@ impl TypeAndPermissions {
 			_ => Type::Other,
 		}
 	}
+
+	fn new(inode_type: Type, permissions: u16) -> Self {
+		let val = match inode_type {
+			Type::Fifo => 0x1,
+			Type::CharacterDevice => 0x2,
+			Type::Directory => 0x4,
+			Type::BlockDevice => 0x6,
+			Type::RegularFile => 0x8,
+			Type::SymbolicLink => 0xA,
+			Type::UnixSocket => 0xC,
+			Type::Other => 0, // This shouldn't happen
+		};
+		TypeAndPermissions(val << 12 | (permissions & 0xFFF))
+	}
 }
 
 #[repr(C)]
@@ -260,12 +274,9 @@ impl Directory {
 			dir_entry.total_entry_size = total_entry_size;
 
 			writer.write_type(&dir_entry)?;
-			// writer.flush()?;
 
 			writer.write(entry.name.as_bytes())?;
 			writer.write(&[0u8])?; // String should be null terminated
-
-			// writer.flush()?;
 
 			writer.seek(SeekFrom::Current(
 				total_entry_size as isize - entry.actual_size() as isize,
@@ -279,16 +290,11 @@ impl Directory {
 		let total_entry_size = (block_size - offset) as u16;
 		written += total_entry_size;
 		dir_entry.total_entry_size = total_entry_size;
-		// TODO add all total entry sizes
 
 		writer.write_type(&dir_entry)?;
-		// writer.flush()?;
 
 		writer.write(last.name.as_bytes())?;
 		writer.write(&[0u8])?; // String should be null terminated
-
-		// writer.flush()?;
-		// serial_println!("{:?}", writer.reader.slice());
 
 		Ok(written as usize)
 	}
@@ -498,13 +504,15 @@ impl BlockGroup {
 		} else {
 			self.descriptor.unallocated_inodes -= 1;
 			let position = self.inode_bitmap.get_free().unwrap();
-			self.inode_bitmap.set(position, Used);
+			serial_println!("position: {}", position);
+			// self.inode_bitmap.set(position, Used);
 			Ok(self.first_inode + (position as u32))
 		}
 	}
 
 	/// Try to get a free block, mark it as used
 	fn get_free_block(&mut self) -> Result<Block, Ext2Err> {
+		unimplemented!(); // I think there might be a bug here. Need to check
 		if self.descriptor.unallocated_blocks == 0 {
 			Err(NoBlocks)
 		} else {
@@ -571,7 +579,7 @@ impl ExtBitMap {
 					// found
 					*byte |= 1 << j;
 
-					return Some(((i * 8) + j + 1) as usize);
+					return Some(((i * 8) + j) as usize);
 				} else {
 					val = val >> 1;
 				}
@@ -579,6 +587,46 @@ impl ExtBitMap {
 		}
 		None
 	}
+}
+
+/// Add a regular file at a given path
+pub fn add_regular_file(path: &str) -> Result<Inode, Ext2Err> {
+	let inode_data = InodeData {
+		type_and_permissions: TypeAndPermissions::new(Type::RegularFile, 0b000110110110),
+		user_id: 0,
+		size_lower: 0,
+		last_access_time: 0,
+		creation_time: 0,
+		last_modification_time: 0,
+		deletion_time: 0,
+		group_id: 0,
+		hard_link_count: 0, // will be 1 once linked
+		sectors_in_user: 0,
+		flags: 0,
+		os_specific_val1: 0,
+		direct_block_pointers: [0; 12],
+		singly_indirect_pointer: 0,
+		doubly_indirect_pointer: 0,
+		triply_indirect_pointer: 0,
+		generation_number: 0,
+		file_acl: 0,
+		size_upper_or_directory_acl: 0,
+		fragment_block_address: 0,
+		os_specific_val2: [0; 12],
+	};
+	let inode = add_inode(inode_data)?;
+	serial_println!("Adding new file at inode: {}", inode);
+	link(path, inode)?;
+	Ok(inode)
+}
+
+fn add_inode(data: InodeData) -> Result<Inode, Ext2Err> {
+	let mut ext = get_ext!().lock();
+	let free_inode: Inode = ext.get_free_inode()?;
+	let data_mut = ext.get_inode_data_mut(free_inode);
+	*data_mut = data;
+
+	Ok(free_inode)
 }
 
 /// Create a (hard) link to an Inode
@@ -955,6 +1003,13 @@ pub fn setup() -> Result<(), Ext2Err> {
 	let disk = Ext2::read_from_disk()?;
 	unsafe { EXT = Some(Mutex::new(disk)) }
 
+	Ok(())
+}
+
+/// Do some things to the file system
+pub fn test() {
+	add_regular_file("/new_file.txt").expect("Failed to add file");
+
 	// serial_println!("Root Inode: {:?}", get_ext!().lock().get_inode_data(ROOT_INODE));
 	// serial_println!("Alice Inode: {:?}", get_ext!().lock().get_inode_data(11));
 
@@ -985,13 +1040,11 @@ pub fn setup() -> Result<(), Ext2Err> {
 	// let string = String::from_utf8(data);
 	// serial_println!("{}", string.unwrap());
 
-	unlink("/books/alice.txt").expect("Failed to unlink");
-	serial_println!("Unlink over");
+	// unlink("/books/alice.txt").expect("Failed to unlink");
+	// serial_println!("Unlink over");
 
-	link("/books/alice.txt", path_to_inode("/alice.txt").expect("Failed to find")).expect("Failed to link");
-	serial_println!("link over");
-
-	Ok(())
+	// link("/books/alice.txt", path_to_inode("/alice.txt").expect("Failed to find")).expect("Failed to link");
+	// serial_println!("link over");
 }
 
 /// Write back all unsaved changes (to the super block, block group descriptors, etc) to the disk

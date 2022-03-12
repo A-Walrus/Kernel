@@ -28,9 +28,12 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		unsafe {
 			buffer::TERM = Some(term);
 		}
-		ext2::setup();
+		ext2::setup().expect("Failed to setup EXT2");
+		serial_println!("Finished setup");
 		// TODO do stuff here
-		ext2::cleanup();
+		ext2::cleanup().expect("Failed to cleanup EXT2");
+		serial_println!("Finished cleanup");
 	}
+	serial_println!("The end");
 	loop {}
 }

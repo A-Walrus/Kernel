@@ -11,6 +11,8 @@ pub enum IOError {
 	NotEnoughBytes,
 	/// Other error
 	Other,
+	/// No data to flush
+	NoData,
 }
 
 /// Trait allowing reading from a stream

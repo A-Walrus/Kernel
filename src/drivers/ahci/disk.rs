@@ -1,14 +1,12 @@
 use crate::{
-	mem::heap::{UBox, UBuffer},
-	util::io::{IOError, Read, Seek, SeekFrom, Write},
+	mem::heap::UBuffer,
+	util::io::{
+		IOError::{self, *},
+		Read, Seek, SeekFrom, Write,
+	},
 };
 use alloc::boxed::Box;
-use core::{
-	cmp::min,
-	mem::{size_of, zeroed},
-	ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
-	slice,
-};
+use core::{cmp::min, ptr::slice_from_raw_parts_mut, slice};
 use spin::Mutex;
 
 use super::{Port, Sector, SECTOR_SIZE};
@@ -69,6 +67,7 @@ impl<'a> BlockReader<'a> {
 		self.block_device
 			.lock()
 			.read_sectors(self.block * self.sectors_per_block, slice);
+		self.block_in_buffer = Some(self.block);
 	}
 
 	/// Write the current block to the disk
@@ -96,7 +95,7 @@ impl<'a> BlockReader<'a> {
 
 	/// Move to block
 	pub fn move_to_block(&mut self, block: u32) {
-		// self.flush();
+		self.flush();
 		self.block = block as usize;
 		self.offset = 0;
 	}
@@ -118,7 +117,7 @@ impl<'a> BlockReader<'a> {
 
 impl<'a> Seek for BlockReader<'a> {
 	fn seek(&mut self, pos: SeekFrom) -> Result<usize, IOError> {
-		// self.flush()?;
+		self.flush()?;
 		match pos {
 			SeekFrom::Start(offset) => {
 				self.block = offset / (self.sectors_per_block * SECTOR_SIZE);
@@ -195,14 +194,21 @@ impl<'a> Write for BlockReader<'a> {
 	}
 
 	fn flush(&mut self) -> Result<(), IOError> {
-		self.write_current_block();
-		Ok(())
+		match self.block_in_buffer {
+			None => Ok(()),
+			Some(block) => {
+				if block == self.block {
+					self.write_current_block();
+				}
+				Ok(())
+			}
+		}
 	}
 }
 
 impl<'a> Drop for BlockReader<'a> {
 	fn drop(&mut self) {
-		// self.flush();
+		self.flush();
 	}
 }
 

@@ -72,11 +72,9 @@ impl<'a> BlockReader<'a> {
 
 	/// Write the current block to the disk
 	pub fn write_current_block(&mut self) {
+		// serial_println!("writing to block {}", self.block);
 		let slice;
 		unsafe {
-			// slice = slice_from_raw_parts_mut(self.buffer.ptr as *mut Sector, self.sectors_per_block)
-			// 	.as_mut()
-			// 	.unwrap();
 			slice = slice_from_raw_parts_mut(self.buffer.slice as *mut Sector, self.sectors_per_block)
 				.as_mut()
 				.unwrap();

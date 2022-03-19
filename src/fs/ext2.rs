@@ -4,6 +4,7 @@ use crate::{
 	util::io::*,
 };
 use alloc::{
+	borrow::ToOwned,
 	collections::VecDeque,
 	str,
 	string::{FromUtf8Error, String, ToString},
@@ -137,7 +138,7 @@ struct BlockGroupDescriptor {
 }
 
 #[repr(u8)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum Type {
 	Fifo = 5,
 	CharacterDevice = 3,
@@ -233,7 +234,11 @@ struct Directory {
 }
 
 impl Directory {
-	fn read(reader: &mut FileReader) -> Result<Self, Ext2Err> {
+	fn read(reader: &mut File) -> Result<Self, Ext2Err> {
+		if reader.inode_data.type_and_permissions.inode_type() != Type::Directory {
+			return Err(NotADir);
+		}
+
 		const ENTRY_SIZE: usize = size_of::<DirectoryEntry>();
 
 		let mut entries = Vec::new();
@@ -255,7 +260,7 @@ impl Directory {
 		Ok(Self { entries })
 	}
 
-	fn write(&mut self, writer: &mut FileReader) -> Result<usize, Ext2Err> {
+	fn write(&mut self, writer: &mut File) -> Result<usize, Ext2Err> {
 		let mut written = 0;
 
 		let block_size = writer.reader.slice().len();
@@ -331,8 +336,8 @@ struct Ext2 {
 
 impl Ext2 {
 	fn get_inode_data(&self, inode: Inode) -> &InodeData {
+		serial_println!("Getting inode data {}", inode);
 		let group = self.super_block.inode_blockgroup(inode);
-		serial_println!("Group {}", group);
 		let index_in_group = self.super_block.inode_index_in_blockgroup(inode);
 		let group = &self.block_groups[group as usize];
 		&group.inode_table[index_in_group]
@@ -406,18 +411,14 @@ impl Ext2 {
 
 		let mut block_reader = BlockReader::new(0, self.super_block.sectors_per_block(), 0, block_device);
 
+		serial_println!("Write to disk");
+
 		for (i, group) in self.block_groups.iter().enumerate() {
 			serial_println!("writing group {}", i);
 			block_reader.move_to_block(group.first_block);
-			// block_reader.seek(SeekFrom::Current(
-			// 	(i as usize * size_of::<BlockGroupDescriptor>()) as isize,
-			// ))?;
-			// block_reader.write_type(&group.descriptor)?;
 			for group in &self.block_groups {
 				block_reader.write_type(&group.descriptor)?;
 			}
-
-			serial_println!("descriptor: {:?}", group.descriptor);
 
 			block_reader.move_to_block(group.descriptor.inode_bitmap_addr);
 			block_reader.write(&group.inode_bitmap.bytes)?;
@@ -465,11 +466,11 @@ impl Ext2 {
 		let group = &mut self.block_groups[group as usize];
 		group.free_block(block)?;
 		self.super_block.unallocated_blocks += 1;
-		// serial_println!(
-		// 	"Freed block {}, free block count is now: {}",
-		// 	block,
-		// 	self.super_block.unallocated_blocks
-		// );
+		serial_println!(
+			"Freed block {}, free block count is now: {}",
+			block,
+			self.super_block.unallocated_blocks
+		);
 		Ok(())
 	}
 
@@ -637,7 +638,7 @@ pub fn link(path: &str, inode: Inode) -> Result<(), Ext2Err> {
 
 	let dir_inode = path_to_inode(folder_path)?;
 
-	let mut parent_reader = FileReader::new(dir_inode);
+	let mut parent_reader = File::new(dir_inode);
 	let mut directory = Directory::read(&mut parent_reader)?;
 
 	if directory.entries.iter().find(|entry| entry.name == file_name).is_some() {
@@ -665,31 +666,78 @@ pub fn link(path: &str, inode: Inode) -> Result<(), Ext2Err> {
 	}
 }
 
+/// Remov an empty (only . and ..) directory
+pub fn rmdir(path: &str) -> Result<(), Ext2Err> {
+	let inode = path_to_inode(path)?;
+	serial_println!("Rmdir Inode: {} ", inode);
+
+	let parent_inode;
+	{
+		let mut reader = File::new(inode);
+		let directory = Directory::read(&mut reader)?;
+		if directory.entries.len() > 2 {
+			return Err(DirNotEmpty);
+		}
+
+		parent_inode = directory
+			.entries
+			.iter()
+			.find_map(|entry| {
+				if entry.name == ".." {
+					Some(entry.entry.inode)
+				} else {
+					None
+				}
+			})
+			.map_or(Err(NoParentDir), |a| Ok(a))?;
+	}
+	serial_println!("Parent inode: {} ", parent_inode);
+	// Update directory count
+	{
+		let mut ext = get_ext!().lock();
+		let block_group = ext.super_block.inode_blockgroup(inode) as usize;
+		let group = &mut ext.block_groups[block_group];
+		group.descriptor.dirs_in_group -= 1;
+	}
+
+	unlink_inode(inode)?;
+	unlink_inode(parent_inode)?;
+	unlink(path)?;
+	Ok(())
+}
+
+/// Remove a link to an inode
+fn unlink_inode(inode: Inode) -> Result<(), Ext2Err> {
+	let sectors_per_block = get_ext!().lock().super_block.sectors_per_block();
+	let inode_data = *get_ext!().lock().get_inode_data(inode);
+
+	let mut ext = get_ext!().lock();
+	let device = get_device!();
+	if inode_data.hard_link_count == 1 {
+		// Get rid of inode
+		ext.free_inode(inode)?;
+		let mut b_reader = BlockReader::new(0, sectors_per_block, 0, device);
+		let blocks = get_inode_blocks(inode_data, &mut b_reader, true);
+		for block in blocks {
+			ext.free_block(block)?;
+		}
+		unsafe {
+			let inode_data_ptr = (ext.get_inode_data_mut(inode)) as *mut InodeData;
+			inode_data_ptr.write_bytes(0, 1);
+		}
+	} else {
+		// Decrease link count
+		ext.get_inode_data_mut(inode).hard_link_count -= 1;
+	}
+	Ok(())
+}
+
 /// Unlink a file, also called removing. If there are multiple hard links to the file, the
 /// other links will continue to be able to access it
 pub fn unlink(path: &str) -> Result<(), Ext2Err> {
-	{
-		let sectors_per_block = get_ext!().lock().super_block.sectors_per_block();
-		let inode = path_to_inode(path)?;
-		let inode_data = *get_ext!().lock().get_inode_data(inode);
+	let inode = path_to_inode(path)?;
+	unlink_inode(inode)?;
 
-		let mut ext = get_ext!().lock();
-		let device = get_device!();
-		if inode_data.hard_link_count == 1 {
-			ext.free_inode(inode)?;
-			let mut b_reader = BlockReader::new(0, sectors_per_block, 0, device);
-			let blocks = get_inode_blocks(inode_data, &mut b_reader, true);
-			for block in blocks {
-				ext.free_block(block)?;
-			}
-			let inode_data_ptr = (ext.get_inode_data_mut(inode)) as *mut InodeData;
-			unsafe {
-				inode_data_ptr.write_bytes(0, 1);
-			}
-		} else {
-			ext.get_inode_data_mut(inode).hard_link_count -= 1;
-		}
-	}
 	let index = path.rfind("/").unwrap();
 	let folder_path = &path[..index + 1];
 	let file_name = &path[index + 1..];
@@ -697,10 +745,9 @@ pub fn unlink(path: &str) -> Result<(), Ext2Err> {
 	serial_println!("folder path: {} ", folder_path);
 
 	let dir_inode = path_to_inode(folder_path)?;
-
 	serial_println!("folder inode: {} ", dir_inode);
 
-	let mut parent_reader = FileReader::new(dir_inode);
+	let mut parent_reader = File::new(dir_inode);
 	let mut directory = Directory::read(&mut parent_reader)?;
 
 	let prev_len = directory.entries.len();
@@ -737,7 +784,7 @@ fn path_to_inode(mut path: &str) -> Result<Inode, Ext2Err> {
 	let mut inode: Inode = ROOT_INODE;
 
 	for name in split {
-		let mut file_reader = FileReader::new(inode);
+		let mut file_reader = File::new(inode);
 		let directory = Directory::read(&mut file_reader)?;
 		// serial_println!("Searching for: {}", name);
 		// serial_println!("Directory : {:#?}", directory);
@@ -812,7 +859,7 @@ fn get_indirect_blocks(
 	}
 }
 
-struct FileReader<'a> {
+struct File<'a> {
 	inode: Inode,
 	inode_data: InodeData,
 	reader: BlockReader<'a>,
@@ -820,7 +867,7 @@ struct FileReader<'a> {
 	blocks: Vec<Block>,
 }
 
-impl<'a> FileReader<'a> {
+impl<'a> File<'a> {
 	fn new(inode: u32) -> Self {
 		serial_println!("Opening inode: {}", inode);
 		let ext = get_ext!();
@@ -839,7 +886,7 @@ impl<'a> FileReader<'a> {
 		}
 	}
 }
-impl<'a> Read for FileReader<'a> {
+impl<'a> Read for File<'a> {
 	fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, IOError> {
 		let to_read = min(buf.len(), self.inode_data.size_lower as usize - self.position);
 		let mut left_to_read = to_read;
@@ -860,7 +907,7 @@ impl<'a> Read for FileReader<'a> {
 	}
 }
 
-impl<'a> Seek for FileReader<'a> {
+impl<'a> Seek for File<'a> {
 	fn seek(&mut self, pos: SeekFrom) -> Result<usize, IOError> {
 		match pos {
 			SeekFrom::Start(offset) => {
@@ -876,7 +923,7 @@ impl<'a> Seek for FileReader<'a> {
 	}
 }
 
-impl<'a> Write for FileReader<'a> {
+impl<'a> Write for File<'a> {
 	fn write(&mut self, mut buf: &[u8]) -> Result<usize, IOError> {
 		let mut added_blocks = Vec::new();
 
@@ -919,7 +966,7 @@ impl<'a> Write for FileReader<'a> {
 	}
 }
 
-impl<'a> Drop for FileReader<'a> {
+impl<'a> Drop for File<'a> {
 	fn drop(&mut self) {
 		let ext = get_ext!();
 		*ext.lock().get_inode_data_mut(self.inode) = self.inode_data;
@@ -979,6 +1026,12 @@ pub enum Ext2Err {
 	FileNotFound,
 	/// The file you are trying to create already exists
 	FileAlreadyExists,
+	/// Trying to do a directory operation on a file that is not a directory
+	NotADir,
+	/// Trying to do an operation that only works on empty directories on a non empty one
+	DirNotEmpty,
+	/// No parent dir. All directories should have a parent (..)
+	NoParentDir,
 }
 
 impl From<IOError> for Ext2Err {
@@ -1009,7 +1062,20 @@ pub fn setup() -> Result<(), Ext2Err> {
 /// Do some things to the file system
 pub fn test() {
 	add_regular_file("/new_file.txt").expect("Failed to add file");
+	add_regular_file("/other_file.txt").expect("Failed to add file");
+	rmdir("/bar").expect("Failed to delete dir");
 
+	let inode = path_to_inode("/alice.txt").expect("failed ot open inode");
+	let mut writer = File::new(inode);
+	writer.write(b"hello eran").expect("Failed to write");
+
+	// serial_println!("after rmdir");
+	// serial_println!("Inode: {:?}", get_ext!().lock().get_inode_data(1923));
+	// get_ext!().lock().get_inode_data_mut(1923).direct_block_pointers[0] = 0;
+
+	// let inode = 1923;
+	// get_ext!().lock().get_inode_data_mut(inode).direct_block_pointers[0] = 0;
+	// serial_println!(" Inode: {:?}", get_ext!().lock().get_inode_data(inode));
 	// serial_println!("Root Inode: {:?}", get_ext!().lock().get_inode_data(ROOT_INODE));
 	// serial_println!("Alice Inode: {:?}", get_ext!().lock().get_inode_data(11));
 

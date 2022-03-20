@@ -1,11 +1,7 @@
 use crate::{
-	drivers::{
-		ahci,
-		ahci::disk::{BlockDevice, Partition},
-	},
-	mem::{self, heap::UBox},
+	drivers::{ahci, ahci::disk::Partition},
+	mem::heap::UBox,
 };
-use alloc::{boxed::Box, vec::Vec};
 
 #[repr(C)]
 struct GptHeader {

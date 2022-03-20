@@ -1,9 +1,6 @@
 use crate::{
 	mem::heap::UBuffer,
-	util::io::{
-		IOError::{self, *},
-		Read, Seek, SeekFrom, Write,
-	},
+	util::io::{IOError, Read, Seek, SeekFrom, Write},
 };
 use alloc::boxed::Box;
 use core::{cmp::min, ptr::slice_from_raw_parts_mut, slice};
@@ -85,17 +82,18 @@ impl<'a> BlockReader<'a> {
 	}
 
 	/// Read the block into the buffer and return a slice to it
-	pub fn read_block(&mut self, block: u32) -> &mut [u8] {
-		self.move_to_block(block);
+	pub fn read_block(&mut self, block: u32) -> Result<&mut [u8], IOError> {
+		self.move_to_block(block)?;
 		self.get_current_block();
-		self.mut_slice()
+		Ok(self.mut_slice())
 	}
 
 	/// Move to block
-	pub fn move_to_block(&mut self, block: u32) {
-		self.flush();
+	pub fn move_to_block(&mut self, block: u32) -> Result<(), IOError> {
+		self.flush()?;
 		self.block = block as usize;
 		self.offset = 0;
+		Ok(())
 	}
 
 	/// Get the slice of the buffer
@@ -206,7 +204,7 @@ impl<'a> Write for BlockReader<'a> {
 
 impl<'a> Drop for BlockReader<'a> {
 	fn drop(&mut self) {
-		self.flush();
+		self.flush().expect("Failed to flush on BlockReader Drop");
 	}
 }
 

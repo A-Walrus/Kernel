@@ -1,11 +1,9 @@
 use super::partitions;
 use crate::{
-	drivers::ahci::disk::{BlockDevice, BlockReader, Partition},
+	drivers::ahci::disk::{BlockReader, Partition},
 	util::io::*,
 };
 use alloc::{
-	borrow::ToOwned,
-	collections::VecDeque,
 	str,
 	string::{FromUtf8Error, String, ToString},
 	vec::Vec,
@@ -86,11 +84,11 @@ struct SuperBlock {
 }
 
 impl SuperBlock {
-	fn check_signature(&self) -> Result<(), ()> {
+	fn check_signature(&self) -> Result<(), Ext2Err> {
 		if self.signature == 61267 {
 			Ok(())
 		} else {
-			Err(())
+			Err(InvalidSignature)
 		}
 	}
 
@@ -313,11 +311,6 @@ struct Entry {
 }
 
 impl Entry {
-	fn set_name(&mut self, name: String) {
-		self.entry.name_length_low = name.len() as u8;
-		self.name = name;
-	}
-
 	fn min_size(&self) -> usize {
 		// (1 + ((size_of::<DirectoryEntry>() + self.name.len() - 1) / 4)) * 4
 		let actual_size = size_of::<DirectoryEntry>() + self.name.len();
@@ -356,13 +349,14 @@ impl Ext2 {
 		let mut sector_reader = BlockReader::new(2, 1, 0, block_device);
 		let super_block: SuperBlock = unsafe { sector_reader.read_type().unwrap() };
 		serial_println!("{:?}", super_block);
+		super_block.check_signature()?;
 
 		let mut block_reader = BlockReader::new(0, super_block.sectors_per_block(), 0, block_device);
 
 		let mut block_groups = Vec::new();
 		for group_index in 0..super_block.num_blockgroups() {
 			serial_println!("Reading group: {}", group_index);
-			block_reader.move_to_block(super_block.block_group_start_block(0));
+			block_reader.move_to_block(super_block.block_group_start_block(0))?;
 
 			block_reader.seek(SeekFrom::Current(
 				(group_index as usize * size_of::<BlockGroupDescriptor>()) as isize,
@@ -373,7 +367,7 @@ impl Ext2 {
 
 			let table_size = super_block.inodes_in_blockgroup as usize * super_block.inode_size as usize;
 			let mut blocks = vec![0; table_size];
-			block_reader.move_to_block(descriptor.inode_table_addr);
+			block_reader.move_to_block(descriptor.inode_table_addr)?;
 			block_reader.read(&mut blocks)?;
 
 			let inode_table = InodeTable {
@@ -381,10 +375,10 @@ impl Ext2 {
 				bytes: blocks,
 			};
 
-			let bytes = Vec::from(block_reader.read_block(descriptor.inode_bitmap_addr));
+			let bytes = Vec::from(block_reader.read_block(descriptor.inode_bitmap_addr)?);
 			let inode_bitmap = ExtBitMap { bytes };
 
-			let bytes = Vec::from(block_reader.read_block(descriptor.block_bitmap_addr));
+			let bytes = Vec::from(block_reader.read_block(descriptor.block_bitmap_addr)?);
 			let block_bitmap = ExtBitMap { bytes };
 
 			block_groups.push(BlockGroup {
@@ -415,18 +409,18 @@ impl Ext2 {
 
 		for (i, group) in self.block_groups.iter().enumerate() {
 			serial_println!("writing group {}", i);
-			block_reader.move_to_block(group.first_block);
+			block_reader.move_to_block(group.first_block)?;
 			for group in &self.block_groups {
 				block_reader.write_type(&group.descriptor)?;
 			}
 
-			block_reader.move_to_block(group.descriptor.inode_bitmap_addr);
+			block_reader.move_to_block(group.descriptor.inode_bitmap_addr)?;
 			block_reader.write(&group.inode_bitmap.bytes)?;
 
-			block_reader.move_to_block(group.descriptor.block_bitmap_addr);
+			block_reader.move_to_block(group.descriptor.block_bitmap_addr)?;
 			block_reader.write(&group.block_bitmap.bytes)?;
 
-			block_reader.move_to_block(group.descriptor.inode_table_addr);
+			block_reader.move_to_block(group.descriptor.inode_table_addr)?;
 			block_reader.write(&group.inode_table.bytes)?;
 		}
 
@@ -505,28 +499,23 @@ impl BlockGroup {
 		} else {
 			self.descriptor.unallocated_inodes -= 1;
 			let position = self.inode_bitmap.get_free().unwrap();
-			serial_println!("position: {}", position);
-			// self.inode_bitmap.set(position, Used);
 			Ok(self.first_inode + (position as u32))
 		}
 	}
 
 	/// Try to get a free block, mark it as used
 	fn get_free_block(&mut self) -> Result<Block, Ext2Err> {
-		unimplemented!(); // I think there might be a bug here. Need to check
 		if self.descriptor.unallocated_blocks == 0 {
 			Err(NoBlocks)
 		} else {
 			self.descriptor.unallocated_blocks -= 1;
 			let position = self.block_bitmap.get_free().unwrap();
-			self.block_bitmap.set(position, Used);
 			Ok(self.first_block + (position as u32))
 		}
 	}
 
 	fn free_inode(&mut self, inode: Inode) -> Result<(), Ext2Err> {
 		self.descriptor.unallocated_inodes += 1;
-		serial_println!("First inode of the group is {}", self.first_inode);
 		self.inode_bitmap.set((inode - self.first_inode) as usize, Free);
 		Ok(())
 	}
@@ -638,7 +627,7 @@ pub fn link(path: &str, inode: Inode) -> Result<(), Ext2Err> {
 
 	let dir_inode = path_to_inode(folder_path)?;
 
-	let mut parent_reader = File::new(dir_inode);
+	let mut parent_reader = File::new(dir_inode)?;
 	let mut directory = Directory::read(&mut parent_reader)?;
 
 	if directory.entries.iter().find(|entry| entry.name == file_name).is_some() {
@@ -673,7 +662,7 @@ pub fn rmdir(path: &str) -> Result<(), Ext2Err> {
 
 	let parent_inode;
 	{
-		let mut reader = File::new(inode);
+		let mut reader = File::new(inode)?;
 		let directory = Directory::read(&mut reader)?;
 		if directory.entries.len() > 2 {
 			return Err(DirNotEmpty);
@@ -717,7 +706,7 @@ fn unlink_inode(inode: Inode) -> Result<(), Ext2Err> {
 		// Get rid of inode
 		ext.free_inode(inode)?;
 		let mut b_reader = BlockReader::new(0, sectors_per_block, 0, device);
-		let blocks = get_inode_blocks(inode_data, &mut b_reader, true);
+		let blocks = get_inode_blocks(inode_data, &mut b_reader, true)?;
 		for block in blocks {
 			ext.free_block(block)?;
 		}
@@ -747,7 +736,7 @@ pub fn unlink(path: &str) -> Result<(), Ext2Err> {
 	let dir_inode = path_to_inode(folder_path)?;
 	serial_println!("folder inode: {} ", dir_inode);
 
-	let mut parent_reader = File::new(dir_inode);
+	let mut parent_reader = File::new(dir_inode)?;
 	let mut directory = Directory::read(&mut parent_reader)?;
 
 	let prev_len = directory.entries.len();
@@ -784,7 +773,7 @@ fn path_to_inode(mut path: &str) -> Result<Inode, Ext2Err> {
 	let mut inode: Inode = ROOT_INODE;
 
 	for name in split {
-		let mut file_reader = File::new(inode);
+		let mut file_reader = File::new(inode)?;
 		let directory = Directory::read(&mut file_reader)?;
 		// serial_println!("Searching for: {}", name);
 		// serial_println!("Directory : {:#?}", directory);
@@ -799,7 +788,7 @@ fn path_to_inode(mut path: &str) -> Result<Inode, Ext2Err> {
 	Ok(inode)
 }
 
-fn get_inode_blocks(inode: InodeData, b_reader: &mut BlockReader, with_parents: bool) -> Vec<Block> {
+fn get_inode_blocks(inode: InodeData, b_reader: &mut BlockReader, with_parents: bool) -> Result<Vec<Block>, Ext2Err> {
 	let mut blocks = Vec::new();
 
 	let result = inode.direct_block_pointers.iter().position(|val| *val == 0);
@@ -810,15 +799,15 @@ fn get_inode_blocks(inode: InodeData, b_reader: &mut BlockReader, with_parents: 
 		None => {
 			blocks.extend_from_slice(&inode.direct_block_pointers);
 			if inode.singly_indirect_pointer == 0 {
-				return blocks;
+				return Ok(blocks);
 			}
-			get_indirect_blocks(&mut blocks, b_reader, inode.singly_indirect_pointer, 1, with_parents);
-			get_indirect_blocks(&mut blocks, b_reader, inode.doubly_indirect_pointer, 2, with_parents);
-			get_indirect_blocks(&mut blocks, b_reader, inode.triply_indirect_pointer, 3, with_parents);
+			get_indirect_blocks(&mut blocks, b_reader, inode.singly_indirect_pointer, 1, with_parents)?;
+			get_indirect_blocks(&mut blocks, b_reader, inode.doubly_indirect_pointer, 2, with_parents)?;
+			get_indirect_blocks(&mut blocks, b_reader, inode.triply_indirect_pointer, 3, with_parents)?;
 		}
 	}
 
-	blocks
+	Ok(blocks)
 }
 
 fn get_indirect_blocks(
@@ -827,11 +816,11 @@ fn get_indirect_blocks(
 	block: Block,
 	indirectness: usize,
 	with_parents: bool,
-) {
+) -> Result<(), Ext2Err> {
 	if block == 0 {
-		return;
+		return Ok(());
 	} else {
-		let slice = b_reader.read_block(block);
+		let slice = b_reader.read_block(block)?;
 
 		let mut sub_blocks;
 		unsafe {
@@ -848,7 +837,7 @@ fn get_indirect_blocks(
 				blocks.extend_from_slice(sub_blocks);
 			}
 			for block in sub_blocks {
-				get_indirect_blocks(blocks, b_reader, *block, indirectness, with_parents);
+				get_indirect_blocks(blocks, b_reader, *block, indirectness, with_parents)?;
 			}
 		} else {
 			if with_parents {
@@ -857,6 +846,7 @@ fn get_indirect_blocks(
 			blocks.extend_from_slice(sub_blocks);
 		}
 	}
+	Ok(())
 }
 
 struct File<'a> {
@@ -868,7 +858,7 @@ struct File<'a> {
 }
 
 impl<'a> File<'a> {
-	fn new(inode: u32) -> Self {
+	fn new(inode: u32) -> Result<Self, Ext2Err> {
 		serial_println!("Opening inode: {}", inode);
 		let ext = get_ext!();
 		let device = get_device!();
@@ -876,14 +866,14 @@ impl<'a> File<'a> {
 		let super_block = ext.lock().super_block;
 
 		let mut block_reader = BlockReader::new(0, super_block.sectors_per_block(), 0, device);
-		let blocks = get_inode_blocks(inode_data, &mut block_reader, false);
-		Self {
+		let blocks = get_inode_blocks(inode_data, &mut block_reader, false)?;
+		Ok(Self {
 			inode,
 			inode_data,
 			reader: block_reader,
 			position: 0,
 			blocks,
-		}
+		})
 	}
 }
 impl<'a> Read for File<'a> {
@@ -897,7 +887,7 @@ impl<'a> Read for File<'a> {
 			let offset_in_block = self.position % block_size;
 			let to_read_from_block = min(left_to_read, block_size - offset_in_block);
 			let next_block = self.blocks[self.position / block_size];
-			block = self.reader.read_block(next_block);
+			block = self.reader.read_block(next_block)?;
 			buf[..to_read_from_block].copy_from_slice(&block[offset_in_block..offset_in_block + to_read_from_block]);
 			buf = &mut buf[to_read_from_block..];
 			left_to_read -= to_read_from_block;
@@ -918,45 +908,50 @@ impl<'a> Seek for File<'a> {
 				self.position = (self.position as isize + offset) as usize;
 				Ok(self.position)
 			}
-			SeekFrom::End(offset) => unimplemented!(),
+			SeekFrom::End(_offset) => unimplemented!(),
 		}
 	}
 }
 
 impl<'a> Write for File<'a> {
 	fn write(&mut self, mut buf: &[u8]) -> Result<usize, IOError> {
+        serial_println!("Writing {} bytes to a file",buf.len());
 		let mut added_blocks = Vec::new();
 
 		let ext = get_ext!();
-		let to_write = min(buf.len(), self.inode_data.size_lower as usize - self.position);
+		let to_write = buf.len();
 		let mut left_to_write = to_write;
 
 		let block_size = self.reader.slice().len();
 		let mut block;
-		while left_to_write > 0 {
+		while left_to_write > 0 { 
+            serial_println!("Loop");
 			let offset_in_block = self.position % block_size;
 			let to_write_to_block = min(left_to_write, block_size - offset_in_block);
 
-			// let next_block = self.blocks[self.position / block_size];
 			let next_block = match self.blocks.get(self.position / block_size) {
 				Some(block) => *block,
 				None => {
-					let free_block = ext.lock().get_free_block().map_err(|a| IOError::Other)?;
+					let free_block = ext.lock().get_free_block().map_err(|_| IOError::Other)?;
 					added_blocks.push(free_block);
 
 					free_block
 				}
 			};
 
-			block = self.reader.read_block(next_block);
-			// buf[..to_read_from_block].copy_from_slice(&block[offset_in_block..offset_in_block + to_read_from_block]);
+			block = self.reader.read_block(next_block)?;
 			block[offset_in_block..offset_in_block + to_write_to_block].copy_from_slice(&buf[..to_write_to_block]);
 			buf = &buf[to_write_to_block..];
 			left_to_write -= to_write_to_block;
 			self.position += to_write_to_block;
 		}
 
-		// TODO add added blocks to inode (with indirectness...)
+		if !added_blocks.is_empty() {
+			// TODO add added blocks to inode (with indirectness...)
+            // maybe get rid of seperate added_blocks Vec, and instead just append to the blocks
+            // vec in file. Added blocks is a slice of that
+			unimplemented!()
+		}
 
 		Ok(to_write)
 	}
@@ -1012,10 +1007,10 @@ use Ext2Err::*;
 /// Error related to the ext2 filesystem, or things it requires
 #[derive(Copy, Clone, Debug)]
 pub enum Ext2Err {
-	/// An error related to file I/O
+	/// An error related to file/disk I/O
 	IO(IOError),
-	/// An error related to a name
-	Name,
+	/// An error related to Utf8
+	Utf8Error,
 	/// Out of Inodes
 	NoInodes,
 	/// Out of Blocks
@@ -1032,6 +1027,8 @@ pub enum Ext2Err {
 	DirNotEmpty,
 	/// No parent dir. All directories should have a parent (..)
 	NoParentDir,
+	/// Ext2 signature is invalid
+	InvalidSignature,
 }
 
 impl From<IOError> for Ext2Err {
@@ -1041,8 +1038,8 @@ impl From<IOError> for Ext2Err {
 }
 
 impl From<FromUtf8Error> for Ext2Err {
-	fn from(e: FromUtf8Error) -> Self {
-		Name
+	fn from(_e: FromUtf8Error) -> Self {
+		Utf8Error
 	}
 }
 
@@ -1061,59 +1058,41 @@ pub fn setup() -> Result<(), Ext2Err> {
 
 /// Do some things to the file system
 pub fn test() {
-	add_regular_file("/new_file.txt").expect("Failed to add file");
-	add_regular_file("/other_file.txt").expect("Failed to add file");
-	rmdir("/bar").expect("Failed to delete dir");
+	let inode = add_regular_file("/new_file.txt").expect("Failed to add file");
+	let mut writer = File::new(inode).expect("failed ot open file");
+	writer.write(TEST_DATA).expect("Failed to write");
 
-	let inode = path_to_inode("/alice.txt").expect("failed ot open inode");
-	let mut writer = File::new(inode);
-	writer.write(b"hello eran").expect("Failed to write");
+	// add_regular_file("/other_file.txt").expect("Failed to add file");
+	// rmdir("/bar").expect("Failed to delete dir");
 
-	// serial_println!("after rmdir");
-	// serial_println!("Inode: {:?}", get_ext!().lock().get_inode_data(1923));
-	// get_ext!().lock().get_inode_data_mut(1923).direct_block_pointers[0] = 0;
-
-	// let inode = 1923;
-	// get_ext!().lock().get_inode_data_mut(inode).direct_block_pointers[0] = 0;
-	// serial_println!(" Inode: {:?}", get_ext!().lock().get_inode_data(inode));
-	// serial_println!("Root Inode: {:?}", get_ext!().lock().get_inode_data(ROOT_INODE));
-	// serial_println!("Alice Inode: {:?}", get_ext!().lock().get_inode_data(11));
-
-	// let mut alice_reader = FileReader::new(11);
-	// let mut data = Vec::new();
-	// alice_reader.read_to_end(&mut data)?;
-	// let string = String::from_utf8(data);
-	// serial_println!("{}", string.unwrap());
-
-	// let mut dir_reader = FileReader::new(ROOT_INODE);
-	// serial_println!("{:?}", get_ext!().lock().get_inode_data(ROOT_INODE));
-	// let directory = Directory::read(&mut dir_reader)?;
-	// serial_println!("1928 dir: {:?}", directory);
-
-	// let mut data = Vec::new();
-	// dir_reader.read_to_end(&mut data)?;
-	// serial_println!("{:?}", data);
-
-	// let directory = Directory::read(&mut root_reader)?;
-	// serial_println!("1928 dir: {:?}", directory);
-
-	// let inode = path_to_inode("/books/alice.txt").expect("oops");
-	// serial_println!("{}", inode);
-	// let mut alice_reader = FileReader::new(inode);
-
-	// let mut data = Vec::new();
-	// alice_reader.read_to_end(&mut data)?;
-	// let string = String::from_utf8(data);
-	// serial_println!("{}", string.unwrap());
-
-	// unlink("/books/alice.txt").expect("Failed to unlink");
-	// serial_println!("Unlink over");
-
-	// link("/books/alice.txt", path_to_inode("/alice.txt").expect("Failed to find")).expect("Failed to link");
-	// serial_println!("link over");
+	// let inode = path_to_inode("/alice.txt").expect("failed ot open inode");
+	// let mut writer = File::new(inode).expect("failed ot open file");
+	// writer.write(b"hello eran").expect("Failed to write");
 }
 
 /// Write back all unsaved changes (to the super block, block group descriptors, etc) to the disk
 pub fn cleanup() -> Result<(), Ext2Err> {
 	get_ext!().lock().write_to_disk()
 }
+
+
+const TEST_DATA: &'static [u8;4381] = 
+b"Hello world!
+I am writing to '/new_file.txt', a file that I have just created. 
+This involves alllocating extra blocks, and, if this string is long enough, dealing with various levels of block indirectness.
+
+Below I have provided some gibberish, to make this file longer.
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Donec maximus diam sed fermentum auctor. Vivamus et vehicula dui. Ut elementum finibus risus non consectetur. Etiam venenatis pulvinar magna, ac feugiat dolor volutpat sit amet. Nulla dignissim nulla quis sagittis feugiat. Mauris varius, justo in rhoncus tincidunt, nunc libero rutrum erat, ac pulvinar est felis vitae lacus. Cras at lorem vel lacus maximus tristique. Curabitur elementum nec velit eu imperdiet. Curabitur sit amet purus iaculis, porttitor magna id, accumsan nunc.
+
+Donec nec rhoncus tortor, ut pharetra leo. Curabitur est leo, porttitor vitae feugiat quis, euismod in felis. Suspendisse sed maximus sapien, eu rutrum nibh. Praesent tempus elementum ex, non interdum diam laoreet ut. Suspendisse eget eros eu ex pulvinar laoreet. In imperdiet arcu eros, vitae porta quam consequat quis. Nulla luctus placerat augue, vel consequat elit semper ac. Aenean porta maximus facilisis. Nulla sagittis malesuada mauris, in viverra tellus accumsan ac. Mauris consectetur mi faucibus feugiat efficitur. Duis eu ullamcorper velit. Aenean tincidunt pretium interdum. Nullam vel est velit. Cras sed lorem sit amet mi vehicula dapibus ut vel dolor. Sed vitae ligula tortor.
+
+Cras aliquam et magna eget bibendum. Quisque et maximus leo. Aenean ac orci efficitur, aliquam tellus vitae, mattis velit. Duis dapibus nisl velit, eget euismod tortor hendrerit at. Aliquam erat volutpat. Curabitur convallis mi rhoncus nunc condimentum congue. Vestibulum rhoncus, turpis quis iaculis condimentum, massa felis rhoncus felis, eget porttitor erat neque eu tellus. Praesent aliquam fringilla dui, ac efficitur ipsum. Integer faucibus arcu at arcu scelerisque, vitae luctus tortor consectetur. Curabitur elementum arcu vel risus posuere porta. Etiam eu pellentesque risus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Integer lacinia ac lacus vitae vehicula. Morbi rhoncus vel urna ut tristique.
+
+Donec sed tempor diam. In fermentum mauris imperdiet ultricies lobortis. Sed eu laoreet erat, scelerisque iaculis tellus. Duis quis mollis elit, vitae interdum felis. Fusce scelerisque est in porta volutpat. Donec sagittis nibh metus, eleifend commodo dui congue id. Cras consectetur est eu neque blandit, sit amet interdum magna tristique. Vestibulum consectetur erat eu augue lobortis cursus. Ut quis enim laoreet, fringilla massa eget, commodo mi. Morbi egestas hendrerit neque vitae maximus. Vestibulum diam massa, pretium sed dignissim commodo, aliquet vel quam. Donec at varius lorem, tristique imperdiet dolor. In imperdiet orci ex, quis elementum sem congue id. Donec iaculis mauris vel nulla egestas, egestas congue felis fringilla. Suspendisse lobortis dapibus est. Aenean id justo a dolor consectetur gravida et quis tellus.
+
+Aenean finibus nec metus quis vestibulum. Aenean nec est ut ipsum laoreet rhoncus. Integer tempor nec lectus id cursus. Donec luctus elementum mauris ut semper. In pharetra, libero vitae efficitur commodo, felis leo facilisis leo, rhoncus eleifend arcu arcu vel mauris. Phasellus maximus sem metus, gravida efficitur lacus luctus eget. Sed at velit sollicitudin, molestie massa et, egestas nisi. Morbi viverra mattis velit eget malesuada. Vestibulum turpis diam, varius a porttitor eget, vestibulum et nulla. Aliquam dignissim tristique tellus, vel vestibulum velit condimentum sed. Phasellus euismod diam ac nunc blandit, quis molestie ligula vulputate. Etiam consectetur cursus egestas. Vivamus maximus massa ipsum, quis aliquam augue luctus at. Cras nec eros augue.
+
+Phasellus luctus diam diam, quis mattis tortor porta et. Nulla ex velit, ullamcorper et bibendum in, vestibulum egestas felis. Proin egestas mattis lectus. Proin porttitor laoreet felis vel tincidunt. Morbi imperdiet convallis erat, eu hendrerit justo gravida eget. Pellentesque facilisis efficitur velit, quis blandit nunc gravida id. Sed ultrices tellus at ex blandit, ac placerat odio lobortis. Donec pretium justo ac erat imperdiet ultrices. Sed sit amet nibh nibh. Nulla aliquet ultricies venenatis cras. 
+";
+

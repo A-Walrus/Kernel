@@ -3,6 +3,7 @@ use x86_64::{
 	PhysAddr,
 };
 
+#[allow(const_item_mutation)]
 const CONFIG_ADDRESS: PortGeneric<u32, WriteOnlyAccess> = PortGeneric::new(0xCF8);
 const CONFIG_DATA: PortGeneric<u32, ReadWriteAccess> = PortGeneric::new(0xCFC);
 use alloc::vec::Vec;
@@ -92,10 +93,11 @@ fn pci_config_read(func: Function, register: u8) -> u32 {
 	let address: u32 = lbus << 16 | lslot << 11 | lfunc << 8 | lregister << 2 | 0x80000000;
 
 	unsafe {
+		#[allow(const_item_mutation)]
 		CONFIG_ADDRESS.write(address);
+		#[allow(const_item_mutation)]
+		CONFIG_DATA.read()
 	}
-
-	unsafe { CONFIG_DATA.read() }
 }
 
 /// Recursively scan PCI buses and find all available functions. This starts at the ['function']

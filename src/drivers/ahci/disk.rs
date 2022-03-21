@@ -50,6 +50,11 @@ impl<'a> BlockReader<'a> {
 		}
 	}
 
+	/// Get number of sectors per block
+	pub fn sectors_per_block(&self) -> usize {
+		self.sectors_per_block
+	}
+
 	/// Read the current block into the buffer
 	fn read_current_block(&mut self) {
 		let slice;

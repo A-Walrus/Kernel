@@ -22,6 +22,10 @@ static mut EXT: Option<Mutex<Ext2>> = None;
 
 const ROOT_INODE: Inode = 2;
 
+const SEPARATOR: &'static str = "/"; // I think I could have chosen anything as the separator, but '/' was chosen like UNIX
+const SELF: &'static str = "."; // In ext, the . represents an entry in a directory pointing to itself
+const PARENT: &'static str = ".."; // In ext, the .. represents an entry in a directory pointing to its parent
+
 macro_rules! get_device {
 	() => {
 		unsafe { DEVICE.as_ref().unwrap() }
@@ -193,7 +197,7 @@ struct InodeData {
 	deletion_time: u32,
 	group_id: u16,
 	hard_link_count: u16,
-	sectors_in_user: u32, // Disk sectors (512b), Not ext2 Blocks (1K+)
+	sectors_in_use: u32, // Disk sectors (512b), Not ext2 Blocks (1K+)
 	flags: u32,
 	os_specific_val1: u32,
 	direct_block_pointers: [Block; 12],
@@ -222,8 +226,7 @@ fn undo_log_minus_10(num: u32) -> usize {
 	1 << (num + 10)
 }
 
-// Abstract land
-// ------------------------------------------------------------------
+// End of literal structs
 
 /// Abstract custom struct representing an easy to work with directory
 #[derive(Debug)]
@@ -256,6 +259,10 @@ impl Directory {
 			slice = &slice[entry.total_entry_size as usize - ENTRY_SIZE..];
 		}
 		Ok(Self { entries })
+	}
+
+	fn empty() -> Self {
+		Self { entries: Vec::new() }
 	}
 
 	fn write(&mut self, writer: &mut File) -> Result<usize, Ext2Err> {
@@ -298,6 +305,8 @@ impl Directory {
 
 		writer.write(last.name.as_bytes())?;
 		writer.write(&[0u8])?; // String should be null terminated
+
+		writer.inode_data.size_lower = written as u32;
 
 		Ok(written as usize)
 	}
@@ -509,24 +518,24 @@ impl BlockGroup {
 			Err(NoBlocks)
 		} else {
 			self.descriptor.unallocated_blocks -= 1;
-			let position = self.block_bitmap.get_free().unwrap();
-			Ok(self.first_block + (position as u32))
+			let index = self.block_bitmap.get_free().unwrap();
+			let block = index as u32 + self.first_block - 1;
+			// Ok(self.first_block + (index as u32))
+			Ok(block)
 		}
 	}
 
 	fn free_inode(&mut self, inode: Inode) -> Result<(), Ext2Err> {
 		self.descriptor.unallocated_inodes += 1;
-		self.inode_bitmap.set((inode - self.first_inode) as usize, Free);
+		let index = (inode - self.first_inode) as usize;
+		self.inode_bitmap.set(index, Free);
 		Ok(())
 	}
 
 	fn free_block(&mut self, block: Block) -> Result<(), Ext2Err> {
 		self.descriptor.unallocated_blocks += 1;
 		let index = (block - self.first_block + 1) as usize;
-		let prev_value = self.block_bitmap.get(index as usize);
-		if prev_value == Free {
-			serial_println!("freeing already free block :{}", block);
-		}
+		self.block_bitmap.get(index as usize);
 		self.block_bitmap.set(index, Free);
 		Ok(())
 	}
@@ -581,6 +590,11 @@ impl ExtBitMap {
 
 /// Add a regular file at a given path
 pub fn add_regular_file(path: &str) -> Result<Inode, Ext2Err> {
+	// TODO check that path is okay before doing anything
+	//  - Absolute
+	//  - Parent exists,
+	//  - It doesn't exist
+
 	let inode_data = InodeData {
 		type_and_permissions: TypeAndPermissions::new(Type::RegularFile, 0b000110110110),
 		user_id: 0,
@@ -591,7 +605,7 @@ pub fn add_regular_file(path: &str) -> Result<Inode, Ext2Err> {
 		deletion_time: 0,
 		group_id: 0,
 		hard_link_count: 0, // will be 1 once linked
-		sectors_in_user: 0,
+		sectors_in_use: 0,
 		flags: 0,
 		os_specific_val1: 0,
 		direct_block_pointers: [0; 12],
@@ -619,9 +633,9 @@ fn add_inode(data: InodeData) -> Result<Inode, Ext2Err> {
 	Ok(free_inode)
 }
 
-/// Create a (hard) link to an Inode
-pub fn link(path: &str, inode: Inode) -> Result<(), Ext2Err> {
-	let index = path.rfind("/").unwrap();
+/// Create a (hard) link to an Inode. returns the parent inode
+pub fn link(path: &str, inode: Inode) -> Result<Inode, Ext2Err> {
+	let index = path.rfind(SEPARATOR).unwrap();
 	let folder_path = &path[..index + 1];
 	let file_name = &path[index + 1..];
 
@@ -651,8 +665,78 @@ pub fn link(path: &str, inode: Inode) -> Result<(), Ext2Err> {
 		parent_reader.rewind()?;
 		directory.write(&mut parent_reader)?;
 
-		Ok(())
+		Ok(dir_inode)
 	}
+}
+
+/// Create a directory
+pub fn mkdir(path: &str) -> Result<Inode, Ext2Err> {
+	// TODO check that path is okay before doing anything
+	serial_println!("mkdir {}", path);
+	let inode_data = InodeData {
+		type_and_permissions: TypeAndPermissions::new(Type::Directory, 0b000111101101),
+		user_id: 0,
+		size_lower: 0,
+		last_access_time: 0,
+		creation_time: 0,
+		last_modification_time: 0,
+		deletion_time: 0,
+		group_id: 0,
+		hard_link_count: 1, // will be 2 once linked (self, and from parent)
+		sectors_in_use: 0,
+		flags: 0,
+		os_specific_val1: 0,
+		direct_block_pointers: [0; 12],
+		singly_indirect_pointer: 0,
+		doubly_indirect_pointer: 0,
+		triply_indirect_pointer: 0,
+		generation_number: 0,
+		file_acl: 0,
+		size_upper_or_directory_acl: 0,
+		fragment_block_address: 0,
+		os_specific_val2: [0; 12],
+	};
+
+	let inode = add_inode(inode_data)?;
+	serial_println!("Added inode");
+
+	let parent_inode = link(path, inode)?;
+	serial_println!("Linked");
+
+	let mut directory = Directory::empty();
+	directory.entries.push(Entry {
+		name: SELF.to_string(),
+		entry: DirectoryEntry {
+			inode,
+			total_entry_size: 0, // Doesn't matter, will get overwritten,
+			name_length_low: SELF.len() as u8,
+			type_indicator: Type::Directory,
+		},
+	});
+	directory.entries.push(Entry {
+		name: PARENT.to_string(),
+		entry: DirectoryEntry {
+			inode: parent_inode,
+			total_entry_size: 0, // Doesn't matter, will get overwritten,
+			name_length_low: PARENT.len() as u8,
+			type_indicator: Type::Directory,
+		},
+	});
+
+	let mut writer = File::new(inode)?;
+	directory.write(&mut writer)?;
+
+	{
+		let mut ext = get_ext!().lock();
+		// Update directory count
+		let block_group = ext.super_block.inode_blockgroup(inode) as usize;
+		let group = &mut ext.block_groups[block_group];
+		group.descriptor.dirs_in_group += 1;
+
+		// Update parent link count
+		ext.get_inode_data_mut(parent_inode).hard_link_count += 1;
+	}
+	Ok(inode)
 }
 
 /// Remov an empty (only . and ..) directory
@@ -672,7 +756,7 @@ pub fn rmdir(path: &str) -> Result<(), Ext2Err> {
 			.entries
 			.iter()
 			.find_map(|entry| {
-				if entry.name == ".." {
+				if entry.name == PARENT {
 					Some(entry.entry.inode)
 				} else {
 					None
@@ -727,7 +811,7 @@ pub fn unlink(path: &str) -> Result<(), Ext2Err> {
 	let inode = path_to_inode(path)?;
 	unlink_inode(inode)?;
 
-	let index = path.rfind("/").unwrap();
+	let index = path.rfind(SEPARATOR).unwrap();
 	let folder_path = &path[..index + 1];
 	let file_name = &path[index + 1..];
 	serial_println!("file name: {} ", file_name);
@@ -751,20 +835,20 @@ pub fn unlink(path: &str) -> Result<(), Ext2Err> {
 }
 
 fn path_to_inode(mut path: &str) -> Result<Inode, Ext2Err> {
-	if *path == *"/" {
+	if *path == *SEPARATOR {
 		return Ok(ROOT_INODE);
 	}
 
-	if path.chars().nth(0) != Some('/') {
+	if !path.starts_with(SEPARATOR) {
 		return Err(NotAbsolute);
 	}
 
-	if path.ends_with("/") {
+	if path.ends_with(SEPARATOR) {
 		// Directory style syntax
 		path = &path[..path.len() - 1];
 	}
 
-	let mut split = path.split("/");
+	let mut split = path.split(SEPARATOR);
 
 	// Get rid of empty string before the first /
 	split.next();
@@ -902,21 +986,24 @@ impl<'a> Seek for File<'a> {
 		match pos {
 			SeekFrom::Start(offset) => {
 				self.position = offset;
-				Ok(offset)
 			}
 			SeekFrom::Current(offset) => {
 				self.position = (self.position as isize + offset) as usize;
-				Ok(self.position)
 			}
 			SeekFrom::End(_offset) => unimplemented!(),
 		}
+		// Seeking after the end of a file is allowed, behaviour is to leave whatever data was
+		// there already.
+		if self.position as u32 > self.inode_data.size_lower {
+			self.inode_data.size_lower = self.position as u32
+		}
+		Ok(self.position)
 	}
 }
 
 impl<'a> Write for File<'a> {
 	fn write(&mut self, mut buf: &[u8]) -> Result<usize, IOError> {
-        serial_println!("Writing {} bytes to a file",buf.len());
-		let mut added_blocks = Vec::new();
+		let old_count = self.blocks.len();
 
 		let ext = get_ext!();
 		let to_write = buf.len();
@@ -924,8 +1011,7 @@ impl<'a> Write for File<'a> {
 
 		let block_size = self.reader.slice().len();
 		let mut block;
-		while left_to_write > 0 { 
-            serial_println!("Loop");
+		while left_to_write > 0 {
 			let offset_in_block = self.position % block_size;
 			let to_write_to_block = min(left_to_write, block_size - offset_in_block);
 
@@ -933,7 +1019,7 @@ impl<'a> Write for File<'a> {
 				Some(block) => *block,
 				None => {
 					let free_block = ext.lock().get_free_block().map_err(|_| IOError::Other)?;
-					added_blocks.push(free_block);
+					self.blocks.push(free_block);
 
 					free_block
 				}
@@ -946,11 +1032,21 @@ impl<'a> Write for File<'a> {
 			self.position += to_write_to_block;
 		}
 
+		let added_blocks = &self.blocks[old_count..];
+
+		if self.position as u32 > self.inode_data.size_lower {
+			self.inode_data.size_lower = self.position as u32
+		}
+
 		if !added_blocks.is_empty() {
+			let added_sector_count = added_blocks.len() * self.reader.sectors_per_block();
+			self.inode_data.sectors_in_use += added_sector_count as u32;
+
 			// TODO add added blocks to inode (with indirectness...)
-            // maybe get rid of seperate added_blocks Vec, and instead just append to the blocks
-            // vec in file. Added blocks is a slice of that
-			unimplemented!()
+			// unimplemented!()
+			if self.blocks.len() <= 12 {
+				self.inode_data.direct_block_pointers[..self.blocks.len()].copy_from_slice(&self.blocks);
+			}
 		}
 
 		Ok(to_write)
@@ -1058,9 +1154,11 @@ pub fn setup() -> Result<(), Ext2Err> {
 
 /// Do some things to the file system
 pub fn test() {
-	let inode = add_regular_file("/new_file.txt").expect("Failed to add file");
-	let mut writer = File::new(inode).expect("failed ot open file");
-	writer.write(TEST_DATA).expect("Failed to write");
+	mkdir("/new_directory").expect("Failed to create directory");
+
+	// let inode = add_regular_file("/new_file.txt").expect("Failed to add file");
+	// let mut writer = File::new(inode).expect("failed ot open file");
+	// writer.write(TEST_DATA).expect("Failed to write");
 
 	// add_regular_file("/other_file.txt").expect("Failed to add file");
 	// rmdir("/bar").expect("Failed to delete dir");
@@ -1075,9 +1173,7 @@ pub fn cleanup() -> Result<(), Ext2Err> {
 	get_ext!().lock().write_to_disk()
 }
 
-
-const TEST_DATA: &'static [u8;4381] = 
-b"Hello world!
+const TEST_DATA: &'static [u8;4381] = b"Hello world!
 I am writing to '/new_file.txt', a file that I have just created. 
 This involves alllocating extra blocks, and, if this string is long enough, dealing with various levels of block indirectness.
 
@@ -1095,4 +1191,3 @@ Aenean finibus nec metus quis vestibulum. Aenean nec est ut ipsum laoreet rhoncu
 
 Phasellus luctus diam diam, quis mattis tortor porta et. Nulla ex velit, ullamcorper et bibendum in, vestibulum egestas felis. Proin egestas mattis lectus. Proin porttitor laoreet felis vel tincidunt. Morbi imperdiet convallis erat, eu hendrerit justo gravida eget. Pellentesque facilisis efficitur velit, quis blandit nunc gravida id. Sed ultrices tellus at ex blandit, ac placerat odio lobortis. Donec pretium justo ac erat imperdiet ultrices. Sed sit amet nibh nibh. Nulla aliquet ultricies venenatis cras. 
 ";
-

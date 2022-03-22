@@ -12,7 +12,7 @@ use core::{
 	cmp::min,
 	mem::size_of,
 	ops::{Index, IndexMut},
-	ptr::slice_from_raw_parts,
+	ptr::slice_from_raw_parts_mut,
 };
 use spin::Mutex;
 
@@ -894,6 +894,17 @@ fn get_inode_blocks(inode: InodeData, b_reader: &mut BlockReader, with_parents: 
 	Ok(blocks)
 }
 
+fn get_sub_blocks<'a>(b_reader: &mut BlockReader<'a>, block: Block) -> Result<&'a mut [Block], IOError> {
+	let slice = b_reader.read_block(block)?;
+
+	unsafe {
+		let slice = slice_from_raw_parts_mut(slice.as_ptr() as *mut Block, slice.len() / 4)
+			.as_mut()
+			.unwrap();
+		Ok(slice)
+	}
+}
+
 fn get_indirect_blocks(
 	blocks: &mut Vec<Block>,
 	b_reader: &mut BlockReader,
@@ -904,16 +915,10 @@ fn get_indirect_blocks(
 	if block == 0 {
 		return Ok(());
 	} else {
-		let slice = b_reader.read_block(block)?;
+		let mut sub_blocks = &*get_sub_blocks(b_reader, block)?;
 
-		let mut sub_blocks;
-		unsafe {
-			sub_blocks = slice_from_raw_parts(slice.as_ptr() as *const u32, slice.len() / 4)
-				.as_ref()
-				.unwrap();
-		}
-		let result = sub_blocks.iter().position(|val| *val == 0);
-		if let Some(index) = result {
+		let zero_index = sub_blocks.iter().position(|val| *val == 0);
+		if let Some(index) = zero_index {
 			sub_blocks = &sub_blocks[..index]
 		}
 		if indirectness > 1 {
@@ -1003,7 +1008,7 @@ impl<'a> Seek for File<'a> {
 
 impl<'a> Write for File<'a> {
 	fn write(&mut self, mut buf: &[u8]) -> Result<usize, IOError> {
-		let old_count = self.blocks.len();
+		let old_block_count = self.blocks.len();
 
 		let ext = get_ext!();
 		let to_write = buf.len();
@@ -1032,20 +1037,27 @@ impl<'a> Write for File<'a> {
 			self.position += to_write_to_block;
 		}
 
-		let added_blocks = &self.blocks[old_count..];
+		let added_blocks = &self.blocks[old_block_count..];
 
 		if self.position as u32 > self.inode_data.size_lower {
 			self.inode_data.size_lower = self.position as u32
 		}
 
 		if !added_blocks.is_empty() {
+			// Update used sector count
 			let added_sector_count = added_blocks.len() * self.reader.sectors_per_block();
 			self.inode_data.sectors_in_use += added_sector_count as u32;
+			serial_println!("sectors in use: {}", self.inode_data.sectors_in_use);
 
-			// TODO add added blocks to inode (with indirectness...)
-			// unimplemented!()
+			// Update blocks
 			if self.blocks.len() <= 12 {
+				// Only direct blocks
 				self.inode_data.direct_block_pointers[..self.blocks.len()].copy_from_slice(&self.blocks);
+			} else {
+				// self.inode_data
+				// 	.direct_block_pointers
+				// 	.copy_from_slice(&self.blocks[..12]);
+				unimplemented!(); // Writing past direct pointers not implemented
 			}
 		}
 
@@ -1156,8 +1168,13 @@ pub fn setup() -> Result<(), Ext2Err> {
 pub fn test() {
 	mkdir("/new_directory").expect("Failed to create directory");
 
-	// let inode = add_regular_file("/new_file.txt").expect("Failed to add file");
-	// let mut writer = File::new(inode).expect("failed ot open file");
+	let inode = add_regular_file("/new_directory/new_file.txt").expect("Failed to add file");
+	let mut writer = File::new(inode).expect("failed ot open file");
+	writer.write(b"Hello world!\n").expect("Failed to write");
+	writer.write(b"My name is Guy\n").expect("Failed to write");
+	// writer.write(TEST_DATA).expect("Failed to write");
+	// writer.write(TEST_DATA).expect("Failed to write");
+	// writer.write(TEST_DATA).expect("Failed to write");
 	// writer.write(TEST_DATA).expect("Failed to write");
 
 	// add_regular_file("/other_file.txt").expect("Failed to add file");
@@ -1172,22 +1189,3 @@ pub fn test() {
 pub fn cleanup() -> Result<(), Ext2Err> {
 	get_ext!().lock().write_to_disk()
 }
-
-const TEST_DATA: &'static [u8;4381] = b"Hello world!
-I am writing to '/new_file.txt', a file that I have just created. 
-This involves alllocating extra blocks, and, if this string is long enough, dealing with various levels of block indirectness.
-
-Below I have provided some gibberish, to make this file longer.
-
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Donec maximus diam sed fermentum auctor. Vivamus et vehicula dui. Ut elementum finibus risus non consectetur. Etiam venenatis pulvinar magna, ac feugiat dolor volutpat sit amet. Nulla dignissim nulla quis sagittis feugiat. Mauris varius, justo in rhoncus tincidunt, nunc libero rutrum erat, ac pulvinar est felis vitae lacus. Cras at lorem vel lacus maximus tristique. Curabitur elementum nec velit eu imperdiet. Curabitur sit amet purus iaculis, porttitor magna id, accumsan nunc.
-
-Donec nec rhoncus tortor, ut pharetra leo. Curabitur est leo, porttitor vitae feugiat quis, euismod in felis. Suspendisse sed maximus sapien, eu rutrum nibh. Praesent tempus elementum ex, non interdum diam laoreet ut. Suspendisse eget eros eu ex pulvinar laoreet. In imperdiet arcu eros, vitae porta quam consequat quis. Nulla luctus placerat augue, vel consequat elit semper ac. Aenean porta maximus facilisis. Nulla sagittis malesuada mauris, in viverra tellus accumsan ac. Mauris consectetur mi faucibus feugiat efficitur. Duis eu ullamcorper velit. Aenean tincidunt pretium interdum. Nullam vel est velit. Cras sed lorem sit amet mi vehicula dapibus ut vel dolor. Sed vitae ligula tortor.
-
-Cras aliquam et magna eget bibendum. Quisque et maximus leo. Aenean ac orci efficitur, aliquam tellus vitae, mattis velit. Duis dapibus nisl velit, eget euismod tortor hendrerit at. Aliquam erat volutpat. Curabitur convallis mi rhoncus nunc condimentum congue. Vestibulum rhoncus, turpis quis iaculis condimentum, massa felis rhoncus felis, eget porttitor erat neque eu tellus. Praesent aliquam fringilla dui, ac efficitur ipsum. Integer faucibus arcu at arcu scelerisque, vitae luctus tortor consectetur. Curabitur elementum arcu vel risus posuere porta. Etiam eu pellentesque risus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Integer lacinia ac lacus vitae vehicula. Morbi rhoncus vel urna ut tristique.
-
-Donec sed tempor diam. In fermentum mauris imperdiet ultricies lobortis. Sed eu laoreet erat, scelerisque iaculis tellus. Duis quis mollis elit, vitae interdum felis. Fusce scelerisque est in porta volutpat. Donec sagittis nibh metus, eleifend commodo dui congue id. Cras consectetur est eu neque blandit, sit amet interdum magna tristique. Vestibulum consectetur erat eu augue lobortis cursus. Ut quis enim laoreet, fringilla massa eget, commodo mi. Morbi egestas hendrerit neque vitae maximus. Vestibulum diam massa, pretium sed dignissim commodo, aliquet vel quam. Donec at varius lorem, tristique imperdiet dolor. In imperdiet orci ex, quis elementum sem congue id. Donec iaculis mauris vel nulla egestas, egestas congue felis fringilla. Suspendisse lobortis dapibus est. Aenean id justo a dolor consectetur gravida et quis tellus.
-
-Aenean finibus nec metus quis vestibulum. Aenean nec est ut ipsum laoreet rhoncus. Integer tempor nec lectus id cursus. Donec luctus elementum mauris ut semper. In pharetra, libero vitae efficitur commodo, felis leo facilisis leo, rhoncus eleifend arcu arcu vel mauris. Phasellus maximus sem metus, gravida efficitur lacus luctus eget. Sed at velit sollicitudin, molestie massa et, egestas nisi. Morbi viverra mattis velit eget malesuada. Vestibulum turpis diam, varius a porttitor eget, vestibulum et nulla. Aliquam dignissim tristique tellus, vel vestibulum velit condimentum sed. Phasellus euismod diam ac nunc blandit, quis molestie ligula vulputate. Etiam consectetur cursus egestas. Vivamus maximus massa ipsum, quis aliquam augue luctus at. Cras nec eros augue.
-
-Phasellus luctus diam diam, quis mattis tortor porta et. Nulla ex velit, ullamcorper et bibendum in, vestibulum egestas felis. Proin egestas mattis lectus. Proin porttitor laoreet felis vel tincidunt. Morbi imperdiet convallis erat, eu hendrerit justo gravida eget. Pellentesque facilisis efficitur velit, quis blandit nunc gravida id. Sed ultrices tellus at ex blandit, ac placerat odio lobortis. Donec pretium justo ac erat imperdiet ultrices. Sed sit amet nibh nibh. Nulla aliquet ultricies venenatis cras. 
-";

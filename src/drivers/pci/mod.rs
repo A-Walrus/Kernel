@@ -1,5 +1,9 @@
-use x86_64::instructions::port::{PortGeneric, ReadWriteAccess, WriteOnlyAccess};
+use x86_64::{
+	instructions::port::{PortGeneric, ReadWriteAccess, WriteOnlyAccess},
+	PhysAddr,
+};
 
+#[allow(const_item_mutation)]
 const CONFIG_ADDRESS: PortGeneric<u32, WriteOnlyAccess> = PortGeneric::new(0xCF8);
 const CONFIG_DATA: PortGeneric<u32, ReadWriteAccess> = PortGeneric::new(0xCFC);
 use alloc::vec::Vec;
@@ -52,7 +56,7 @@ use crate::serial_println;
 // ║     0xF    ║  Max latency  ║   Min Grant   ║  Interrupt PIN  ║     Interrupt Line     ║
 // ╚════════════╩═══════════════╩═══════════════╩═════════════════╩════════════════════════╝
 
-/// test pci
+/// Test pci
 pub fn testing() {
 	let res = recursive_scan();
 	serial_println!("{:?}", res);
@@ -61,11 +65,16 @@ pub fn testing() {
 	}
 }
 
+/// Struct representing a PCI function. This is like the PCI "address" of a function (thing that does
+/// something). Some examples are network cards, storage cards, bus bridges, and so on.
 #[derive(Debug, Copy, Clone)]
-struct Function {
-	bus: u8,
-	slot: u8,
-	function: u8,
+pub struct Function {
+	/// The bus that this function is on (0-256)
+	pub bus: u8,
+	/// The slot/device that this function is on (0-32)
+	pub slot: u8,
+	/// The function that this is on the device (0-8)
+	pub function: u8,
 }
 
 impl Function {
@@ -84,13 +93,16 @@ fn pci_config_read(func: Function, register: u8) -> u32 {
 	let address: u32 = lbus << 16 | lslot << 11 | lfunc << 8 | lregister << 2 | 0x80000000;
 
 	unsafe {
+		#[allow(const_item_mutation)]
 		CONFIG_ADDRESS.write(address);
+		#[allow(const_item_mutation)]
+		CONFIG_DATA.read()
 	}
-
-	unsafe { CONFIG_DATA.read() }
 }
 
-fn recursive_scan() -> Vec<Function> {
+/// Recursively scan PCI buses and find all available functions. This starts at the ['function']
+/// (0,0,0) and through buses and bridges finds the rest of the functions recursively.
+pub fn recursive_scan() -> Vec<Function> {
 	let mut found = Vec::new();
 	let mut function = Function::new(0, 0, 0);
 
@@ -132,6 +144,7 @@ enum HeaderType {
 	Reserved = 0xff,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct HeaderTypeField {
 	header_type: HeaderType,
@@ -156,12 +169,16 @@ fn get_header_type_val(func: Function) -> u8 {
 	(reg >> 16) as u8
 }
 
-fn get_class_code(func: Function) -> u8 {
+/// Get the class code/id of the function. Each class code represents a different type of device
+/// storage, network, display...
+pub fn get_class_code(func: Function) -> u8 {
 	let reg = pci_config_read(func, 2);
 	(reg >> 24) as u8
 }
 
-fn get_subclass_code(func: Function) -> u8 {
+/// Get the subclass code/id of the function. Each subclass code represents a more specific
+/// type for the class according to ['get_class_code'].
+pub fn get_subclass_code(func: Function) -> u8 {
 	let reg = pci_config_read(func, 2);
 	(reg >> 16) as u8
 }
@@ -173,11 +190,16 @@ fn get_secondary_bus(func: Function) -> u8 {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-struct Interrupt {
-	pin: u8,
-	line: u8,
+/// Struct describing the interrupt data in the PCI register
+pub struct Interrupt {
+	/// The interrupt pin (not sure what that means)
+	pub pin: u8,
+	/// The interrupt line (I believe that's the index IRQ)
+	pub line: u8,
 }
-fn get_interrupt(func: Function) -> Interrupt {
+
+/// Get the interrupt data for the function
+pub fn get_interrupt(func: Function) -> Interrupt {
 	let reg = pci_config_read(func, 2);
 	Interrupt {
 		pin: (reg >> 8) as u8,
@@ -199,14 +221,27 @@ fn get_interrupt(func: Function) -> Interrupt {
 // ║  4-Byte Aligned Base Address  ║  Reserved  ║  Always 1  ║
 // ╚═══════════════════════════════╩════════════╩════════════╝
 
-#[derive(Debug)]
-enum Bar {
-	MemorySpace { prefetchable: bool, base_address: u64 },
-	IOSpace { base_address: u32 },
+/// Enum representing a Base Address Register. Can either be in memory space or io space.
+#[derive(Debug, Copy, Clone)]
+pub enum Bar {
+	/// Base Address register in memory space. Memory spase BARS are:
+	/// - Located in physical ram.
+	/// - Aligned to 16 Bytes
+	MemorySpace {
+		/// Whether reading this BAR has any side effects
+		prefetchable: bool,
+		/// The base address, this address is a physical address in ram
+		base_address: PhysAddr,
+	},
+	/// Base Address register in I/O space. Its address is not within the physical ram.
+	IOSpace {
+		/// The I/O base address. It is 4 Byte aligned.
+		base_address: PhysAddr,
+	},
 }
 
-// Only correct if Header Type is Regular (0x0)
-fn get_bars(func: Function) -> Vec<Bar> {
+/// Get vector of BARS of this function. Only valid if Header Type is Regular (0x0)!
+pub fn get_bars(func: Function) -> Vec<Bar> {
 	let mut vec = Vec::new();
 	let mut i = 0;
 	while i < 6 {
@@ -221,7 +256,7 @@ fn get_bars(func: Function) -> Vec<Bar> {
 						// 32 bit
 						Bar::MemorySpace {
 							prefetchable,
-							base_address: (bar_i & 0xFFFFFFF0) as u64,
+							base_address: PhysAddr::new((bar_i & 0xFFFFFFF0) as u64),
 						}
 					}
 					2 => {
@@ -231,7 +266,7 @@ fn get_bars(func: Function) -> Vec<Bar> {
 						let end = pci_config_read(func, 4 + i) as u64;
 						Bar::MemorySpace {
 							prefetchable,
-							base_address: ((start & 0xFFFFFFF0) + ((end & 0xFFFFFFFF) << 32)),
+							base_address: PhysAddr::new((start & 0xFFFFFFF0) + ((end & 0xFFFFFFFF) << 32)),
 						}
 					}
 					_ => {
@@ -242,7 +277,7 @@ fn get_bars(func: Function) -> Vec<Bar> {
 			} else {
 				// IO space
 				Bar::IOSpace {
-					base_address: bar_i & 0xFFFFFFFC,
+					base_address: PhysAddr::new((bar_i & 0xFFFFFFFC) as u64),
 				}
 			}
 		};

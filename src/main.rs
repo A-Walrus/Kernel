@@ -3,10 +3,9 @@
 
 extern crate alloc;
 use bootloader::{entry_point, BootInfo};
-use core::fmt::Write;
 use kernel::{
 	cpu::{gdt, interrupts},
-	drivers,
+	fs::ext2,
 	io::buffer,
 	mem::{buddy, heap, paging},
 	serial_println,
@@ -18,26 +17,25 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 	if let Some(framebuffer) = boot_info.framebuffer.as_mut() {
 		gdt::setup();
-		interrupts::setup();
 		paging::setup();
 		buddy::setup(&boot_info.memory_regions);
-
-		let len = buffer::calc_real_length(framebuffer);
-
-		heap::setup(len);
+		heap::setup(buffer::calc_real_length(framebuffer));
+		interrupts::setup();
 		serial_println!("Setup complete!");
 
 		let screen = buffer::Screen::new_from_framebuffer(framebuffer);
-
-		let mut term = buffer::Terminal::new(screen);
-
-		write!(term, "Free RAM {} MiB", buddy::ALLOCATOR.lock().get_free_space() >> 20).unwrap();
-
+		let term = buffer::Terminal::new(screen);
 		unsafe {
 			buffer::TERM = Some(term);
 		}
-
-		drivers::pci::testing();
+		ext2::setup().expect("Failed to setup EXT2");
+		serial_println!("Finished setup");
+		// TODO do stuff here
+		ext2::test();
+		//
+		ext2::cleanup().expect("Failed to cleanup EXT2");
+		serial_println!("Finished cleanup");
 	}
+	serial_println!("The end");
 	loop {}
 }

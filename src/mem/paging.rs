@@ -17,19 +17,18 @@ const PHYSICAL_MAPPING_OFFSET: u64 = 0xFFFFC00000000000;
 
 /// Map the given range of pages, to anywhere in the physical memory, on the current page table. Allocate
 /// frames for them.
-pub fn map_in_current(range: PageRangeInclusive) {
+pub fn map_in_current(range: PageRangeInclusive, flags: PageTableFlags) {
 	let table = get_current_page_table();
-	map(range, table);
+	map(range, table, flags);
 }
 
 /// Map the given range of pages, to anywhere in the physical memory, on the given page table. Allocate
 /// frames for them.
-pub fn map(range: PageRangeInclusive, table: &mut PageTable) {
+pub fn map(range: PageRangeInclusive, table: &mut PageTable, flags: PageTableFlags) {
 	let mut offset_table: OffsetPageTable;
 	unsafe {
 		offset_table = get_offset_page_table(table);
 	}
-	let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 	let mut frame_allocator = buddy::ALLOCATOR.lock();
 	for page in range {
 		unsafe {

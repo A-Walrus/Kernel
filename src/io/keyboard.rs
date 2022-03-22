@@ -5,8 +5,8 @@ use spin::Mutex;
 use x86_64::instructions::port::{Port, PortGeneric, ReadWriteAccess};
 
 const DATA_PORT: u16 = 0x60; // Read/Write
-const STATUS_PORT: u16 = 0x64; // Read
-const COMMAND_PORT: u16 = 0x64; // Write
+const _STATUS_PORT: u16 = 0x64; // Read
+const _COMMAND_PORT: u16 = 0x64; // Write
 
 lazy_static! {
 	#[doc(hidden)]

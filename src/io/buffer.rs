@@ -352,11 +352,12 @@ impl<'a> Write for Terminal<'a> {
 #[macro_export]
 macro_rules! print {
 	($($arg:tt)*) => {
+        #[allow(unused_unsafe)]
 		unsafe {
 			match &mut $crate::io::buffer::TERM {
 				Some(term) => {
 					use core::fmt::Write;
-					write!(term, $($arg)*);
+					write!(term, $($arg)*).unwrap();
 				}
 				None => {}
 			}

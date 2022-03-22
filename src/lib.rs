@@ -10,6 +10,8 @@
 #![feature(const_mut_refs)] // mutable references inside const functions
 #![feature(alloc_error_handler)] // error handler for alloc failiures
 #![feature(int_log)] // log2 for ints (using single assembly instruction to find highest bit)
+#![feature(slice_ptr_get)]
+#![feature(slice_ptr_len)]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
@@ -28,6 +30,12 @@ pub mod mem;
 
 /// Dealing with drivers
 pub mod drivers;
+
+/// Dealing with filesystems and partitions
+pub mod fs;
+
+/// Utilities
+pub mod util;
 
 use core::panic::PanicInfo;
 

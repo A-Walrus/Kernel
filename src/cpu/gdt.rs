@@ -16,11 +16,12 @@ lazy_static! {
 }
 
 lazy_static! {
-	static ref GDT: (GlobalDescriptorTable, Selectors) = {
+	/// GDT
+	pub static ref GDT: (GlobalDescriptorTable, Selectors) = {
 		let mut gdt = GlobalDescriptorTable::new();
 		let kernel_code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
 		let kernel_data_selector = gdt.add_entry(Descriptor::kernel_data_segment());
-		let user_code_selector = gdt.add_entry(Descriptor::user_data_segment());
+		let user_code_selector = gdt.add_entry(Descriptor::user_code_segment());
 		let user_data_selector = gdt.add_entry(Descriptor::user_data_segment());
 		let tss_selector = gdt.add_entry(Descriptor::tss_segment(&TSS));
 		(
@@ -38,12 +39,17 @@ lazy_static! {
 
 #[allow(dead_code)]
 /// All the data created statically to describe the GDT, and its segments.
-struct Selectors {
-	kernel_code_selector: SegmentSelector,
-	kernel_data_selector: SegmentSelector,
-	user_code_selector: SegmentSelector,
-	user_data_selector: SegmentSelector,
-	tss_selector: SegmentSelector,
+pub struct Selectors {
+	/// Kernel code selector
+	pub kernel_code_selector: SegmentSelector,
+	/// Kernel data selector
+	pub kernel_data_selector: SegmentSelector,
+	/// User code selector
+	pub user_code_selector: SegmentSelector,
+	/// User data selector
+	pub user_data_selector: SegmentSelector,
+	/// TSS selector
+	pub tss_selector: SegmentSelector,
 }
 
 /// Set up global descriptor table, and set code segment register, and task

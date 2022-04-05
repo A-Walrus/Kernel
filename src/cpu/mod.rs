@@ -3,3 +3,6 @@ pub mod gdt;
 
 /// Dealing with interrupts.
 pub mod interrupts;
+
+/// System calls
+pub mod syscalls;

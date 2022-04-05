@@ -13,6 +13,7 @@
 #![feature(slice_ptr_get)]
 #![feature(asm)]
 #![feature(slice_ptr_len)]
+#![feature(naked_functions)]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 

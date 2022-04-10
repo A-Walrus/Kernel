@@ -1,6 +1,4 @@
-use core::borrow::Borrow;
-
-use elf_rs::{self, Elf, ElfFile, ProgramHeaderFlags, ProgramType};
+use elf_rs::{self, Elf, ElfFile, ProgramType};
 
 use x86_64::{
 	addr::VirtAddr,
@@ -10,16 +8,35 @@ use x86_64::{
 	},
 };
 
-use crate::{cpu::syscalls, fs::ext2, mem::paging};
+use crate::{
+	cpu::syscalls,
+	fs::ext2::{self, Ext2Err},
+	mem::paging,
+};
+
+/// Error relating to reading, parsing, loading, or executing an ELF executable file.
+pub enum ElfErr {
+	/// Error related to the file system
+	Fs(Ext2Err),
+	/// Only 64 bit executables are supported
+	Elf32,
+}
+
+impl From<Ext2Err> for ElfErr {
+	fn from(e: Ext2Err) -> Self {
+		ElfErr::Fs(e)
+	}
+}
 
 /// test elf parsing and mapping
-pub fn test() {
-	let file_data = ext2::read_bin();
+pub fn test() -> Result<(), ElfErr> {
+	let file_data = ext2::read_file("/bin/syscall_loop")?;
 	let elf = Elf::from_bytes(&file_data).expect("failed to parse elf");
 	let elf64 = match elf {
 		Elf::Elf64(elf) => elf,
-		_ => panic!("got Elf32, expected Elf64"),
+		_ => return Err(ElfErr::Elf32),
 	};
+
 	for header in elf64.program_header_iter() {
 		serial_println!("{:?}", header);
 		if header.ph_type() == ProgramType::LOAD {
@@ -49,6 +66,9 @@ pub fn test() {
 			}
 		}
 	}
+
+	// TODO actually figure out where to put stack
+
 	const STACK_SIZE: u64 = 0x800000; // 8MiB
 	const STACK_TOP: u64 = 0x1000000;
 
@@ -66,4 +86,5 @@ pub fn test() {
 			VirtAddr::new(STACK_TOP),
 		);
 	}
+	Ok(())
 }

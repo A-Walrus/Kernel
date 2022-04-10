@@ -24,9 +24,10 @@ pub fn test() {
 		serial_println!("{:?}", header);
 		if header.ph_type() == ProgramType::LOAD {
 			let addr = VirtAddr::new(header.vaddr());
-			let size = header.memsz();
+			let size = header.memsz() as usize;
 			let start = header.offset() as usize;
-			let end = start + header.filesz() as usize;
+			let filesz = header.filesz() as usize;
+			let end = start + filesz;
 			let data: &[u8] = &file_data[start..end];
 
 			let range = PageRangeInclusive::<Size4KiB> {
@@ -40,8 +41,12 @@ pub fn test() {
 			unsafe {
 				let target: *mut u8 = addr.as_mut_ptr();
 				target.copy_from(data.as_ptr(), data.len());
+
+				// Pad zeroes (especially important for BSS)
+				let padding_start = target.add(filesz);
+				let padding_len = size - filesz;
+				padding_start.write_bytes(0, padding_len);
 			}
-			// TODO pad zeroes
 		}
 	}
 	const STACK_SIZE: u64 = 0x800000; // 8MiB

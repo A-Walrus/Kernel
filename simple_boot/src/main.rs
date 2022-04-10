@@ -6,7 +6,7 @@ use std::{
 const RUN_ARGS: &[&str] = &[
 	"--no-reboot",
 	"-s",
-	"-S",
+	// "-S",
 	"-machine",
 	"q35",
 	"-drive",

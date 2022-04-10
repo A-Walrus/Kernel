@@ -7,6 +7,7 @@ extern crate alloc;
 use bootloader::{entry_point, BootInfo};
 use kernel::{
 	cpu::{gdt, interrupts, syscalls},
+	elf::test,
 	fs::ext2,
 	io::buffer,
 	mem::{buddy, heap, paging},
@@ -29,62 +30,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		unsafe {
 			buffer::TERM = Some(term);
 		}
-		// ext2::setup().expect("Failed to setup EXT2");
+		ext2::setup().expect("Failed to setup EXT2");
 		serial_println!("Finished setup");
 
-		use x86_64::{
-			addr::VirtAddr,
-			structures::paging::{
-				page::{Page, PageRangeInclusive},
-				PageTableFlags, Size4KiB,
-			},
-		};
-
-		const ADDR: u64 = 0x400000;
-		// Map userspace
-		{
-			let range = PageRangeInclusive::<Size4KiB> {
-				start: Page::containing_address(VirtAddr::new(ADDR)),
-				end: Page::containing_address(VirtAddr::new(ADDR + (2 * 4096))),
-			};
-			let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-			paging::map_in_current(range, flags);
-
-			unsafe {
-				let from = test_function as *const u8;
-				let to = ADDR as *mut u8;
-				to.copy_from(from, 4096);
-			}
-
-			// paging::print_table_recursive(paging::get_current_page_table(), 4);
-		}
-
-		unsafe {
-			syscalls::go_to_ring3(VirtAddr::new(ADDR), VirtAddr::new(ADDR + 4096 + 4000));
-		}
+		test();
 
 		// ext2::cleanup().expect("Failed to cleanup EXT2");
 		serial_println!("Finished cleanup");
 	}
 	serial_println!("The end");
 	loop {}
-}
-
-#[naked]
-extern "C" fn test_function() {
-	unsafe {
-		asm!(
-			"2:",
-			"nop",
-			"nop",
-			"mov rax, 0x0",
-			"mov rbx, 0x66",
-			"mov rdi, 0xBB",
-			"mov rsi, 0xCC",
-			"mov rdx, 0xDD",
-			"syscall",
-			"jmp 2b",
-			options(noreturn)
-		);
-	}
 }

@@ -39,6 +39,9 @@ pub mod fs;
 /// Utilities
 pub mod util;
 
+/// Module for dealing with ELF executables
+pub mod elf;
+
 use core::panic::PanicInfo;
 
 /// Panic handler is called automatically when a panic occurs, and prints the information to serial

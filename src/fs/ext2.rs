@@ -1185,6 +1185,15 @@ pub fn test() {
 	// writer.write(b"hello eran").expect("Failed to write");
 }
 
+/// temporary function for reading the elf
+pub fn read_bin() -> Vec<u8> {
+	let inode = path_to_inode("/bin/syscall_loop").expect("Failed to get inode");
+	let mut reader = File::new(inode).expect("Failed to open");
+	let mut data = Vec::new();
+	reader.read_to_end(&mut data).expect("Failed to read");
+	data
+}
+
 /// Write back all unsaved changes (to the super block, block group descriptors, etc) to the disk
 pub fn cleanup() -> Result<(), Ext2Err> {
 	get_ext!().lock().write_to_disk()

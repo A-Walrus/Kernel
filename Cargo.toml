@@ -25,6 +25,7 @@ linked_list_allocator = {version="0.9.1", features =["default","alloc_ref","use_
 bitflags="*"
 modular-bitfield="*"
 hashbrown="*" # no-std hashmap/hashtable
+elf_rs ="*" # parsing ELF executables
 
 # config for bootloader
 [package.metadata.bootloader]

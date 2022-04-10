@@ -28,7 +28,7 @@ pub struct SyscallResult(u64);
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALS: [Syscall; 1] = [sys_debug];
+const SYSCALLS: [Syscall; 1] = [sys_debug];
 
 fn sys_debug(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult {
 	serial_println!("Hello, from syscall!");
@@ -86,7 +86,7 @@ extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
 		registers = &mut *registers_ptr;
 	}
 	serial_println!("{:?}", registers);
-	let function = SYSCALS.get(registers.scratch.rax as usize);
+	let function = SYSCALLS.get(registers.scratch.rax as usize);
 	match function {
 		Some(func) => {
 			let scratch = &mut registers.scratch;

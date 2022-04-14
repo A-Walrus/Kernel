@@ -31,7 +31,7 @@ pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg
 const SYSCALLS: [Syscall; 1] = [sys_debug];
 
 fn sys_debug(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult {
-	serial_println!("Hello, from syscall!");
+	serial_println!("DEBUG SYSCALL, arguments:");
 	serial_println!(
 		"{:#x}, {:#x}, {:#x}, {:#x}, {:#x}, {:#x}",
 		arg0,
@@ -80,12 +80,10 @@ struct Registers {
 #[no_mangle] // called from asm
 extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
 	serial_println!("HANDLING SYSCALL");
-	serial_println!("{:?}", registers_ptr);
 	let registers: &mut Registers;
 	unsafe {
 		registers = &mut *registers_ptr;
 	}
-	serial_println!("{:?}", registers);
 	let function = SYSCALLS.get(registers.scratch.rax as usize);
 	match function {
 		Some(func) => {
@@ -207,8 +205,7 @@ pub fn setup() {
 	let ss_sysret = GDT.1.user_data_selector;
 	let cs_syscall = GDT.1.kernel_code_selector;
 	let ss_syscall = GDT.1.kernel_data_selector;
-	// Star MSR has segment selectors for (user / kernel)*(code / data)
-	Star::write(cs_sysret, ss_sysret, cs_syscall, ss_syscall).expect("Failed to write star");
+	Star::write(cs_sysret, ss_sysret, cs_syscall, ss_syscall).expect("Failed to write MSR Star");
 
 	unsafe {
 		// Enable syscalls through Efer MSR

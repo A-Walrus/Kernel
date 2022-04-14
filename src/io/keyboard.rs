@@ -31,7 +31,7 @@ fn parse_scan_code(scancode: u8) {
 	if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
 		if let Some(key) = keyboard.process_keyevent(key_event) {
 			match key {
-				DecodedKey::Unicode(character) => serial_print!("{}", character),
+				DecodedKey::Unicode(character) => print!("{}", character),
 				DecodedKey::RawKey(key) => serial_println!("{:?}", key),
 			}
 		}

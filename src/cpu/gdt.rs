@@ -6,11 +6,20 @@ use x86_64::{
 		gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector},
 		tss::TaskStateSegment,
 	},
+	VirtAddr,
 };
-
 lazy_static! {
 	static ref TSS: TaskStateSegment = {
-		let tss = TaskStateSegment::new();
+		let mut tss = TaskStateSegment::new();
+		tss.interrupt_stack_table[0] = {
+			const STACK_SIZE: usize = 4096 * 5;
+			static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+
+			let stack_start = VirtAddr::from_ptr(unsafe { &STACK });
+			let stack_end = stack_start + STACK_SIZE;
+			stack_end
+		};
+		// tss.privilege_stack_table[0] = VirtAddr::new(0xFFFF900000000000);
 		tss
 	};
 }

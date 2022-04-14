@@ -2,22 +2,26 @@ use super::{irq_handler, PIC_1_OFFSET};
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
 pub fn set_irq_handlers(idt: &mut InterruptDescriptorTable) {
-	idt[(PIC_1_OFFSET + 0) as usize].set_handler_fn(irq_handler_0);
-	idt[(PIC_1_OFFSET + 1) as usize].set_handler_fn(irq_handler_1);
-	idt[(PIC_1_OFFSET + 2) as usize].set_handler_fn(irq_handler_2);
-	idt[(PIC_1_OFFSET + 3) as usize].set_handler_fn(irq_handler_3);
-	idt[(PIC_1_OFFSET + 4) as usize].set_handler_fn(irq_handler_4);
-	idt[(PIC_1_OFFSET + 5) as usize].set_handler_fn(irq_handler_5);
-	idt[(PIC_1_OFFSET + 6) as usize].set_handler_fn(irq_handler_6);
-	idt[(PIC_1_OFFSET + 7) as usize].set_handler_fn(irq_handler_7);
-	idt[(PIC_1_OFFSET + 8) as usize].set_handler_fn(irq_handler_8);
-	idt[(PIC_1_OFFSET + 9) as usize].set_handler_fn(irq_handler_9);
-	idt[(PIC_1_OFFSET + 10) as usize].set_handler_fn(irq_handler_10);
-	idt[(PIC_1_OFFSET + 11) as usize].set_handler_fn(irq_handler_11);
-	idt[(PIC_1_OFFSET + 12) as usize].set_handler_fn(irq_handler_12);
-	idt[(PIC_1_OFFSET + 13) as usize].set_handler_fn(irq_handler_13);
-	idt[(PIC_1_OFFSET + 14) as usize].set_handler_fn(irq_handler_14);
-	idt[(PIC_1_OFFSET + 15) as usize].set_handler_fn(irq_handler_15);
+	unsafe {
+		idt[(PIC_1_OFFSET + 0) as usize].set_handler_fn(irq_handler_0);
+		idt[(PIC_1_OFFSET + 1) as usize]
+			.set_handler_fn(irq_handler_1)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 2) as usize].set_handler_fn(irq_handler_2);
+		idt[(PIC_1_OFFSET + 3) as usize].set_handler_fn(irq_handler_3);
+		idt[(PIC_1_OFFSET + 4) as usize].set_handler_fn(irq_handler_4);
+		idt[(PIC_1_OFFSET + 5) as usize].set_handler_fn(irq_handler_5);
+		idt[(PIC_1_OFFSET + 6) as usize].set_handler_fn(irq_handler_6);
+		idt[(PIC_1_OFFSET + 7) as usize].set_handler_fn(irq_handler_7);
+		idt[(PIC_1_OFFSET + 8) as usize].set_handler_fn(irq_handler_8);
+		idt[(PIC_1_OFFSET + 9) as usize].set_handler_fn(irq_handler_9);
+		idt[(PIC_1_OFFSET + 10) as usize].set_handler_fn(irq_handler_10);
+		idt[(PIC_1_OFFSET + 11) as usize].set_handler_fn(irq_handler_11);
+		idt[(PIC_1_OFFSET + 12) as usize].set_handler_fn(irq_handler_12);
+		idt[(PIC_1_OFFSET + 13) as usize].set_handler_fn(irq_handler_13);
+		idt[(PIC_1_OFFSET + 14) as usize].set_handler_fn(irq_handler_14);
+		idt[(PIC_1_OFFSET + 15) as usize].set_handler_fn(irq_handler_15);
+	}
 }
 
 extern "x86-interrupt" fn irq_handler_0(stack_frame: InterruptStackFrame) {

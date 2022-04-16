@@ -1,0 +1,13 @@
+[target.'cfg(target_os = "none")']
+runner="./runner.sh"
+rustflags = [
+	"-C", "link-arg=--image-base=0xffff800000000000",
+]
+
+[unstable]
+build-std = ["core", "compiler_builtins","alloc"]
+build-std-features = ["compiler-builtins-mem"]
+
+[build]
+target = "x86_64-custom.json"
+rustdocflags = ["--document-private-items"]

@@ -30,7 +30,7 @@ impl From<Ext2Err> for ElfErr {
 
 /// test elf parsing and mapping
 pub fn test() -> Result<(), ElfErr> {
-	let file_data = ext2::read_file("/bin/syscall_loop")?;
+	let file_data = ext2::read_file("/bin/shell")?;
 	let elf = Elf::from_bytes(&file_data).expect("failed to parse elf");
 	let elf64 = match elf {
 		Elf::Elf64(elf) => elf,

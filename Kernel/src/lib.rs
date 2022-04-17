@@ -41,7 +41,7 @@ pub mod fs;
 pub mod util;
 
 /// Module for dealing with ELF executables
-pub mod elf;
+pub mod process;
 
 use core::panic::PanicInfo;
 

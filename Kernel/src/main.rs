@@ -7,10 +7,10 @@ extern crate alloc;
 use bootloader::{entry_point, BootInfo};
 use kernel::{
 	cpu::{gdt, interrupts, syscalls},
-	elf::test,
 	fs::ext2,
 	io::buffer,
 	mem::{buddy, heap, paging},
+	process::elf::test,
 	serial_println,
 };
 

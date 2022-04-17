@@ -1,4 +1,6 @@
-use crate::{cpu::gdt::GDT, serial_print, serial_println};
+use core::{ptr::slice_from_raw_parts, str};
+
+use crate::{cpu::gdt::GDT, print, serial_print, serial_println};
 use x86_64::{
 	instructions::segmentation::DS,
 	registers::{model_specific::*, rflags::RFlags},
@@ -23,12 +25,32 @@ use x86_64::{
 
 #[repr(transparent)]
 /// Result of a syscall
-pub struct SyscallResult(u64);
+pub struct SyscallResult(i64);
 
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 1] = [sys_debug];
+const SYSCALLS: [Syscall; 2] = [sys_debug, sys_print];
+
+fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let ptr = ptr as *const u8;
+	// This is not sound. Who knows wha the user put as the pointer
+	let opt_slice;
+	unsafe {
+		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+	if let Some(slice) = opt_slice {
+		let a = str::from_utf8(slice);
+		if let Ok(s) = a {
+			print!("{}", s);
+			return SyscallResult(0);
+		} else {
+			return SyscallResult(-1);
+		}
+	} else {
+		return SyscallResult(-1); // Failiure
+	}
+}
 
 fn sys_debug(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult {
 	serial_println!("DEBUG SYSCALL, arguments:");
@@ -55,7 +77,7 @@ struct ScratchRegisters {
 	rdi: u64,
 	rdx: u64,
 	rcx: u64,
-	rax: u64,
+	rax: i64,
 }
 
 #[repr(C)]

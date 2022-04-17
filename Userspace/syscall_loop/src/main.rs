@@ -4,19 +4,18 @@
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
-	for _ in 0..100 {
+	let s = "Hello from Userland!\n";
+	let addr = s.as_ptr();
+	let len = s.len();
+	for _ in 0..10 {
 		unsafe {
 			asm!(
-				"mov rax, 0x0", // sys debug
+				"mov rax, 0x1", // sys print
 				"syscall",
+				in("rdi") addr,
+				in("rsi") len
 			);
 		}
-	}
-	unsafe {
-		asm!(
-			"mov rax, 0x1", // sys exit
-			"syscall",
-		);
 	}
 	loop {}
 }

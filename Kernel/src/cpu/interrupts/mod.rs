@@ -67,8 +67,7 @@ pub fn setup() {
 	unsafe {
 		let mut pics = PICS.lock();
 		pics.initialize();
-		// const MASK: u8 = 0b1111_1000;
-		const MASK: u8 = 0b1111_1101;
+		const MASK: u8 = 0b1111_1000;
 		pics.write_masks(MASK, MASK);
 	};
 	x86_64::instructions::interrupts::enable();

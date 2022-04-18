@@ -1,4 +1,5 @@
 #!/bin/bash
+cp ../image.img ../disk.img
 cd simple_boot
 cargo build --release
 cd ..

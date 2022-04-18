@@ -13,6 +13,7 @@ use core::{
 	mem::size_of,
 	ops::{Index, IndexMut},
 	ptr::slice_from_raw_parts_mut,
+	slice,
 };
 use spin::Mutex;
 
@@ -1010,7 +1011,6 @@ impl<'a> Write for File<'a> {
 	fn write(&mut self, mut buf: &[u8]) -> Result<usize, IOError> {
 		let old_block_count = self.blocks.len();
 
-		let ext = get_ext!();
 		let to_write = buf.len();
 		let mut left_to_write = to_write;
 
@@ -1023,7 +1023,7 @@ impl<'a> Write for File<'a> {
 			let next_block = match self.blocks.get(self.position / block_size) {
 				Some(block) => *block,
 				None => {
-					let free_block = ext.lock().get_free_block().map_err(|_| IOError::Other)?;
+					let free_block = get_ext!().lock().get_free_block().map_err(|_| IOError::Other)?;
 					self.blocks.push(free_block);
 
 					free_block
@@ -1044,21 +1044,87 @@ impl<'a> Write for File<'a> {
 		}
 
 		if !added_blocks.is_empty() {
+			let mut new_blocks = added_blocks.len();
 			// Update used sector count
-			let added_sector_count = added_blocks.len() * self.reader.sectors_per_block();
-			self.inode_data.sectors_in_use += added_sector_count as u32;
-			serial_println!("sectors in use: {}", self.inode_data.sectors_in_use);
 
 			// Update blocks
 			if self.blocks.len() <= 12 {
 				// Only direct blocks
 				self.inode_data.direct_block_pointers[..self.blocks.len()].copy_from_slice(&self.blocks);
 			} else {
-				// self.inode_data
-				// 	.direct_block_pointers
-				// 	.copy_from_slice(&self.blocks[..12]);
-				unimplemented!(); // Writing past direct pointers not implemented
+				let block_size = self.reader.slice().len();
+				let blocks_per_block = block_size / size_of::<Block>();
+
+				let old0 = old_block_count;
+				let new0 = self.blocks.len();
+				serial_println!("0: {}	->	{}", old0, new0);
+
+				let old1 = next_tier_blocks(old0, 0, blocks_per_block);
+				let new1 = next_tier_blocks(new0, 0, blocks_per_block);
+				serial_println!("1: {}	->	{}", old1, new1);
+
+				let old2 = next_tier_blocks(old1, 1, blocks_per_block);
+				let new2 = next_tier_blocks(new1, 1, blocks_per_block);
+				serial_println!("2: {}	->	{}", old2, new2);
+
+				let old3 = next_tier_blocks(old2, 2, blocks_per_block);
+				let new3 = next_tier_blocks(new2, 2, blocks_per_block);
+				serial_println!("3: {}	->	{}", old3, new3);
+
+				let mut reader = self.reader.clone();
+
+				let a = do_thing(
+					&mut reader,
+					old3,
+					new3,
+					slice::from_mut(&mut self.inode_data.singly_indirect_pointer),
+					&[],
+				)?;
+				let b = do_thing(
+					&mut reader,
+					old2,
+					new2,
+					slice::from_mut(&mut self.inode_data.doubly_indirect_pointer),
+					&a,
+				)?;
+				let c = do_thing(
+					&mut reader,
+					old1,
+					new1,
+					slice::from_mut(&mut self.inode_data.singly_indirect_pointer),
+					&b,
+				)?;
+				// do_thing(&mut reader, old0, new0, &mut self.inode_data.direct_block_pointers, &c)?;
+				{
+					let old = old0;
+					let in_inode = &mut self.inode_data.direct_block_pointers;
+					let mut parents: &[Block] = &c;
+					let mut slice: &[Block] = added_blocks;
+					if old < in_inode.len() {
+						let len = min(in_inode.len() - old, slice.len());
+						in_inode[old..old + len].copy_from_slice(&slice[..len]);
+						slice = &slice[len..]
+					}
+
+					while !slice.is_empty() {
+						let sub_blocks = get_sub_blocks(&mut reader, parents[0])?;
+						parents = &parents[1..];
+						let first_zero = sub_blocks
+							.iter()
+							.position(|a| *a == 0)
+							.expect("No free blocks in parent");
+
+						let sub_slice = &mut sub_blocks[first_zero..];
+						let len = min(slice.len(), sub_slice.len());
+						sub_slice[..len].copy_from_slice(&slice[..len]);
+						slice = &slice[len..];
+					}
+				}
+				new_blocks += new1 + new2 + new3 - old1 - old2 - old3;
 			}
+
+			let added_sector_count = new_blocks * self.reader.sectors_per_block();
+			self.inode_data.sectors_in_use += added_sector_count as u32;
 		}
 
 		Ok(to_write)
@@ -1066,6 +1132,84 @@ impl<'a> Write for File<'a> {
 
 	fn flush(&mut self) -> Result<(), IOError> {
 		self.reader.flush()
+	}
+}
+
+fn do_thing(
+	mut reader: &mut BlockReader,
+	old: usize,
+	new: usize,
+	in_inode: &mut [Block],
+	mut parents: &[Block],
+) -> Result<Vec<Block>, IOError> {
+	let mut vec = Vec::new();
+	let mut first: Option<Block> = None;
+
+	if old > 0 && old <= in_inode.len() {
+		// First is the last non zero
+		let first_zero = in_inode.iter().position(|a| *a == 0);
+		first = match first_zero {
+			None => Some(in_inode[in_inode.len() - 1]),
+			Some(index) => Some(in_inode[index - 1]),
+		}
+	}
+
+	for _ in 0..new - old {
+		let free_block = get_ext!().lock().get_free_block().map_err(|_| IOError::Other)?;
+		vec.push(free_block);
+	}
+
+	let mut slice: &[Block] = &vec;
+	if old < in_inode.len() {
+		let len = min(in_inode.len() - old, slice.len());
+		in_inode[old..old + len].copy_from_slice(&slice[..len]);
+		slice = &slice[len..]
+	}
+
+	while !slice.is_empty() {
+		let sub_blocks = get_sub_blocks(&mut reader, parents[0])?;
+		parents = &parents[1..];
+		let first_zero = sub_blocks
+			.iter()
+			.position(|a| *a == 0)
+			.expect("No free blocks in parent");
+		if first.is_none() {
+			first = Some(sub_blocks[first_zero - 1]);
+		}
+
+		let sub_slice = &mut sub_blocks[first_zero..];
+		let len = min(slice.len(), sub_slice.len());
+		sub_slice[..len].copy_from_slice(&slice[..len]);
+		slice = &slice[len..];
+	}
+
+	// If old == 0 vec is only new blocks, if it isn't than vec is the last block + the new blocks
+	// The last block is either the last (nonzero) block in in_inode, or the last (nonzero) block in
+	// the sub blocks of the first parent.
+
+	match first {
+		None => {
+			assert_eq!(old, 0);
+		}
+		Some(block) => {
+			vec.insert(0, block);
+		}
+	}
+
+	if old == 0 {
+		assert_eq!(vec.len(), new);
+	} else {
+		assert_eq!(vec.len(), new - old + 1);
+	}
+	Ok(vec)
+}
+
+fn next_tier_blocks(count: usize, tier: usize, bpb: usize) -> usize {
+	let in_inode = if tier == 0 { 12 } else { 1 };
+	if count <= in_inode {
+		0
+	} else {
+		(count - in_inode + bpb - 1) / bpb
 	}
 }
 
@@ -1166,16 +1310,17 @@ pub fn setup() -> Result<(), Ext2Err> {
 
 /// Do some things to the file system
 pub fn test() {
-	mkdir("/new_directory").expect("Failed to create directory");
+	let inode = mkdir("/new_directory").expect("Failed to create directory");
+	println!("Directory inode: {}", inode);
 
 	let inode = add_regular_file("/new_directory/new_file.txt").expect("Failed to add file");
+	println!("File indoe: {}", inode);
 	let mut writer = File::new(inode).expect("failed ot open file");
 	writer.write(b"Hello world!\n").expect("Failed to write");
 	writer.write(b"My name is Guy\n").expect("Failed to write");
-	// writer.write(TEST_DATA).expect("Failed to write");
-	// writer.write(TEST_DATA).expect("Failed to write");
-	// writer.write(TEST_DATA).expect("Failed to write");
-	// writer.write(TEST_DATA).expect("Failed to write");
+	for _ in 0..10 {
+		writer.write(TEST_DATA).expect("failed to write");
+	}
 
 	// add_regular_file("/other_file.txt").expect("Failed to add file");
 	// rmdir("/bar").expect("Failed to delete dir");
@@ -1198,3 +1343,23 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, Ext2Err> {
 pub fn cleanup() -> Result<(), Ext2Err> {
 	get_ext!().lock().write_to_disk()
 }
+
+const TEST_DATA:&[u8; 4116] = b"
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum vehicula interdum justo ut tincidunt. Mauris accumsan at ipsum quis convallis. Ut elementum laoreet venenatis. Fusce orci neque, convallis sit amet magna sit amet, scelerisque pellentesque lectus. Ut rhoncus arcu ut commodo vehicula. Morbi sed eros non nunc ornare bibendum. Phasellus ut rhoncus ipsum. Etiam posuere dolor at suscipit ullamcorper.
+
+Suspendisse ac pharetra quam. Donec et nisi tellus. Aenean et purus risus. Sed porttitor nibh id felis bibendum, eu malesuada neque vestibulum. Donec metus turpis, hendrerit in magna ac, aliquet ornare massa. Sed odio urna, dignissim eu dui sit amet, fringilla blandit lorem. In porta fringilla pellentesque. Donec consectetur diam lectus, vitae sollicitudin nisl elementum quis. Pellentesque ut dictum elit, eget efficitur lorem. Nam eu tempor erat, semper lobortis metus. Sed cursus erat ullamcorper tellus porta, ut accumsan enim placerat. Vivamus lacinia eget est eget ullamcorper. Nam ligula arcu, feugiat sit amet tellus sit amet, dignissim rutrum mi. Pellentesque eget felis ac nunc pulvinar aliquam.
+
+Mauris non mauris porttitor, pellentesque neque sed, mattis orci. Integer rhoncus risus vel molestie ullamcorper. Phasellus cursus vehicula elit, eu pharetra mi pellentesque eget. Proin purus lacus, tincidunt ut cursus ac, ultrices sit amet ante. Sed semper pharetra arcu, vel vestibulum velit viverra et. Integer id dictum mi. Morbi sed condimentum risus. Nullam bibendum, ex id facilisis semper, nunc libero ultricies lorem, ac vulputate mi sem nec ipsum. Mauris tincidunt augue nisl, id posuere lorem tincidunt ac.
+
+Phasellus vestibulum ipsum vel tortor eleifend, ac placerat quam facilisis. Morbi dapibus, lorem id lobortis dignissim, lorem eros fermentum sem, et tincidunt dui orci in ante. Integer lobortis, leo ac interdum vehicula, orci nisl ullamcorper libero, eget scelerisque risus justo ac tellus. Nulla venenatis id turpis non placerat. Aliquam at massa eu lacus vehicula dapibus. Donec pellentesque arcu ut tellus rutrum eleifend. Suspendisse imperdiet sed nulla in ullamcorper. Phasellus dictum dapibus sem sit amet blandit. Fusce bibendum tellus rhoncus, lacinia dolor ut, iaculis magna. Vestibulum consectetur quis augue et blandit.
+
+Nam iaculis, odio a efficitur lacinia, risus ipsum pulvinar massa, in efficitur ex elit aliquam libero. Praesent aliquet congue felis id fringilla. Proin at nunc aliquet, interdum metus tempus, tincidunt justo. Nam pretium venenatis ex, vel vestibulum turpis eleifend quis. Donec eu lobortis est. Integer lectus ante, finibus in odio in, auctor placerat augue. Vestibulum a tincidunt massa, vitae volutpat lectus.
+
+Quisque et viverra dui, quis varius nulla. Phasellus iaculis quam fermentum rhoncus facilisis. Nunc tempus gravida justo quis egestas. Nam euismod ac lectus vitae lacinia. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Suspendisse potenti. Integer a viverra elit. Ut eget lacinia lorem.
+
+Nullam gravida consectetur lacus vel vehicula. Phasellus ac magna dui. Quisque eleifend vitae leo ut blandit. Nunc arcu turpis, rhoncus in ex a, tincidunt mollis mauris. Sed quis posuere arcu. Curabitur ultrices sapien hendrerit eros commodo blandit. Donec aliquam lacus quis quam facilisis dignissim.
+
+Nulla dapibus magna purus, a laoreet sem porta sed. Sed ultricies mauris ac arcu cursus, ac cursus neque blandit. Vestibulum faucibus suscipit hendrerit. Integer id risus varius, molestie metus quis, pulvinar leo. In sit amet erat quis sapien tincidunt dignissim nec et sapien. Nullam aliquet elementum orci, et accumsan metus laoreet eget. Sed accumsan risus et erat fringilla, non ultrices urna consectetur.
+
+Praesent pretium purus quis nibh interdum, vel ornare diam rutrum. Pellentesque vel mattis mauris. Aliquam vestibulum sagittis est, non viverra nibh pharetra vel. Donec hendrerit magna quis diam dictum, et malesuada lacus blandit. Ut elit velit, ornare vel enim in, imperdiet sollicitudin nibh. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere volutpat. 	
+";

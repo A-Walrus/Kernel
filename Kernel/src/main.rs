@@ -10,8 +10,7 @@ use kernel::{
 	fs::ext2,
 	io::buffer,
 	mem::{buddy, heap, paging},
-	process::elf::test,
-	serial_println,
+	process, serial_println,
 };
 
 entry_point!(kernel_main);
@@ -33,11 +32,16 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		ext2::setup().expect("Failed to setup EXT2");
 		serial_println!("Finished setup");
 
-		test();
+		process::add_process("/bin/hi").expect("Failed to add process hi");
+		process::add_process("/bin/hello").expect("Failed to add process hello");
 
-		// ext2::cleanup().expect("Failed to cleanup EXT2");
+		process::run_next_process();
+
+		ext2::cleanup().expect("Failed to cleanup EXT2");
 		serial_println!("Finished cleanup");
 	}
 	serial_println!("The end");
-	loop {}
+	loop {
+		x86_64::instructions::hlt()
+	}
 }

@@ -1,16 +1,22 @@
 use super::buddy;
 use crate::serial_println;
+use alloc::boxed::Box;
 use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
+use lazy_static::lazy_static;
 use x86_64::{
 	addr::{PhysAddr, VirtAddr},
-	registers::control::Cr3,
+	registers::control::{Cr3, Cr3Flags},
 	structures::paging::{
-		mapper::{Mapper, OffsetPageTable},
+		mapper::{Mapper, OffsetPageTable, Translate},
 		page::PageRangeInclusive,
 		page_table::{PageTableEntry, PageTableFlags},
 		FrameAllocator, FrameDeallocator, PageTable, PhysFrame, Size1GiB, Size2MiB, Size4KiB,
 	},
 };
+
+lazy_static! {
+	static ref KERNEL_CR3: (PhysFrame, Cr3Flags) = Cr3::read();
+}
 
 /// Virtual address that the entire physical memory is mapped starting from.
 const PHYSICAL_MAPPING_OFFSET: u64 = 0xFFFFC00000000000;
@@ -42,6 +48,42 @@ pub fn map(range: PageRangeInclusive, table: &mut PageTable, flags: PageTableFla
 	}
 }
 
+/// Set the current page table.
+/// # Safety
+/// This is extremeley unsafe, for many reasons.
+///  - changing page tables can mess with memory safety.
+///  - The page table must live for as long as it is used
+pub unsafe fn set_page_table(page_table: &PageTable) {
+	let flags = Cr3Flags::empty();
+
+	let virt_addr = VirtAddr::from_ptr(page_table);
+	// let page = Page::containing_address(addr);
+
+	let kernel_table = get_offset_page_table(get_kernel_page_table());
+
+	// let frame = kernel_table
+	// .translate_page(page)
+	// .expect("Page table not mapped in kernel page table");
+	let phys_addr = kernel_table
+		.translate_addr(virt_addr)
+		.expect("Page table not mapped in kernel page table");
+	let frame = PhysFrame::containing_address(phys_addr);
+
+	x86_64::registers::control::Cr3::write(frame, flags);
+	// NOTE chaing cr3 flushes the tlb, no need to flush it manually
+}
+
+/// Set the current page table to the kernel
+/// # Safety
+/// Because the kernel page table is static we don't need to worry about it living long enough.
+/// We do still need to worry about messing with memory safety
+///  - changing page tables can mess with memory safety.
+///
+pub unsafe fn set_page_table_to_kernel() {
+	// set_page_table(get_kernel_page_table()); // doesn't work because the kernel referance I use is mapped in the full mapping, not individually
+	Cr3::write(KERNEL_CR3.0, KERNEL_CR3.1);
+}
+
 /// Set up paging. Clean up the page table created by the bootloader.
 pub fn setup() {
 	let table = get_current_page_table();
@@ -49,6 +91,23 @@ pub fn setup() {
 	unsafe {
 		wipe_lower_half(table);
 	}
+}
+
+/// Page table for a user process
+pub struct UserPageTable(pub Box<PageTable>);
+
+impl Drop for UserPageTable {
+	fn drop(&mut self) {
+		unsafe {
+			wipe_lower_half(&mut self.0);
+		}
+	}
+}
+
+/// Get a new userspace pagetable
+pub fn get_new_user_table() -> UserPageTable {
+	let user_table: PageTable = get_kernel_page_table().clone();
+	UserPageTable(Box::new(user_table))
 }
 
 /// Wipes the lower half of a page table. Returns all physical frames that were mapped to in that
@@ -111,13 +170,19 @@ pub fn virt_to_phys(virt: VirtAddr) -> PhysAddr {
 	PhysAddr::new(virt.as_u64() - PHYSICAL_MAPPING_OFFSET)
 }
 
+fn page_table_ref_from_cr3(cr3: (PhysFrame, Cr3Flags)) -> &'static mut PageTable {
+	let phys_addr = cr3.0.start_address();
+	unsafe { get_page_table_by_addr(phys_addr) }
+}
+
 /// Returns a reference (with static lifetime) to the current top level page table.
 pub fn get_current_page_table() -> &'static mut PageTable {
-	let (phys_frame, _flags) = Cr3::read(); // CR3 register stores location of page table (and some flags)
-	let phys_addr = phys_frame.start_address();
+	page_table_ref_from_cr3(Cr3::read())
+}
 
-	// This is sound because we know that CR3 points to a page table
-	unsafe { get_page_table_by_addr(phys_addr) }
+/// Get the kernels page table
+fn get_kernel_page_table() -> &'static mut PageTable {
+	page_table_ref_from_cr3(*KERNEL_CR3)
 }
 
 /// Get an [OffsetPageTable] from a page table. This is a wrapper which makes it easy to work with

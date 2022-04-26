@@ -30,7 +30,7 @@ pub struct SyscallResult(i64);
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 2] = [sys_debug, sys_print];
+const SYSCALLS: [Syscall; 3] = [sys_debug, sys_print, sys_open_file];
 
 fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
@@ -43,6 +43,28 @@ fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResul
 		let a = str::from_utf8(slice);
 		if let Ok(s) = a {
 			print!("{}", s);
+			return SyscallResult(0);
+		} else {
+			return SyscallResult(-1);
+		}
+	} else {
+		return SyscallResult(-1); // Failiure
+	}
+}
+
+fn sys_open_file(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	// This is not implemented
+	unimplemented!();
+
+	let ptr = ptr as *const u8;
+	// This is not sound. Who knows wha the user put as the pointer
+	let opt_slice;
+	unsafe {
+		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+	if let Some(slice) = opt_slice {
+		let a = str::from_utf8(slice);
+		if let Ok(path) = a {
 			return SyscallResult(0);
 		} else {
 			return SyscallResult(-1);
@@ -93,7 +115,8 @@ struct PreservedRegisters {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-struct Registers {
+/// Registers
+pub struct Registers {
 	preserved: PreservedRegisters,
 	scratch: ScratchRegisters,
 }
@@ -102,10 +125,12 @@ struct Registers {
 #[no_mangle] // called from asm
 extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
 	serial_println!("HANDLING SYSCALL");
+
 	let registers: &mut Registers;
 	unsafe {
 		registers = &mut *registers_ptr;
 	}
+
 	let function = SYSCALLS.get(registers.scratch.rax as usize);
 	match function {
 		Some(func) => {
@@ -119,6 +144,9 @@ extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
 			let result = func(rdi, rsi, rdx, r10, r8, r9);
 
 			scratch.rax = result.0;
+
+			// TODO figure this out
+			crate::process::context_switch(registers);
 			return;
 		}
 		None => {

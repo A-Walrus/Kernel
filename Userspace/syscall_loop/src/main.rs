@@ -4,10 +4,10 @@
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
-	let s = "Hello from Userland!\n";
+	let s = "Hi\n";
 	let addr = s.as_ptr();
 	let len = s.len();
-	for _ in 0..10 {
+	loop {
 		unsafe {
 			asm!(
 				"mov rax, 0x1", // sys print
@@ -17,7 +17,6 @@ pub extern "C" fn _start() -> ! {
 			);
 		}
 	}
-	loop {}
 }
 
 use core::panic::PanicInfo;

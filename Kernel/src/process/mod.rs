@@ -57,8 +57,6 @@ impl PCB {
 
 					asm!(
 						"",
-						// in("rbx") registers.preserved.rbx, //moved through rdx before
-						// in("rbp") registers.preserved.rbp, // Moved through rax before
 						in("r12") registers.preserved.r12,
 						in("r13") registers.preserved.r13,
 						in("r14") registers.preserved.r14,
@@ -69,15 +67,15 @@ impl PCB {
 						in("r8") registers.scratch.r8,
 						in("rsi") registers.scratch.rsi,
 						in("rdi") registers.scratch.rdi,
-						in("rdx") registers.scratch.rdx, // This is getting overwritten...
+						in("rdx") registers.scratch.rdx,
 						in("rcx") registers.scratch.rcx,
-						in("rax") registers.scratch.rax,
 					);
 					asm!(
-						"push rdx",
+						"push rax",
 						"pop rsp",
+						"mov rax, QWORD PTR [rsp-0x10]", // rax from when it was pushed before
 						"sysretq",
-						in("rdx") registers.scratch.rsp,
+						in("rax") registers.scratch.rsp,
 						options(noreturn)
 					);
 				}

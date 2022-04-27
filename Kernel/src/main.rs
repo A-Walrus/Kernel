@@ -32,8 +32,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		ext2::setup().expect("Failed to setup EXT2");
 		serial_println!("Finished setup");
 
-		process::add_process("/bin/hi").expect("Failed to add process hi");
-		process::add_process("/bin/hello").expect("Failed to add process hello");
+		process::add_process("/bin/a").expect("Failed to add process");
+		process::add_process("/bin/b").expect("Failed to add process");
 
 		process::run_next_process();
 

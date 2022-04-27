@@ -34,6 +34,7 @@ const SYSCALLS: [Syscall; 3] = [sys_debug, sys_print, sys_open_file];
 
 fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
+	serial_println!("sys_print, ptr: {:?}, len: {}", ptr, len);
 	// This is not sound. Who knows wha the user put as the pointer
 	let opt_slice;
 	unsafe {
@@ -45,6 +46,7 @@ fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResul
 			print!("{}", s);
 			return SyscallResult(0);
 		} else {
+			serial_println!("Invalid UTF print");
 			return SyscallResult(-1);
 		}
 	} else {
@@ -90,35 +92,56 @@ fn sys_debug(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-struct ScratchRegisters {
-	r11: u64,
-	r10: u64,
-	r9: u64,
-	r8: u64,
-	rsi: u64,
-	rdi: u64,
-	rdx: u64,
-	rcx: u64,
-	rax: i64,
+/// Scratch registers
+pub struct ScratchRegisters {
+	/// r11 register
+	pub r11: u64,
+	/// r10 register
+	pub r10: u64,
+	/// r9 register
+	pub r9: u64,
+	/// r8 register
+	pub r8: u64,
+	/// rsi register
+	pub rsi: u64,
+	/// rdi register
+	pub rdi: u64,
+	/// rdx register
+	pub rdx: u64,
+	/// rcx register
+	pub rcx: u64,
+	/// rax register
+	pub rax: i64,
+	/// rsp register
+	pub rsp: u64,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-struct PreservedRegisters {
-	r15: u64,
-	r14: u64,
-	r13: u64,
-	r12: u64,
-	rbp: u64,
-	rbx: u64,
+/// Preserved registers
+pub struct PreservedRegisters {
+	/// r15 register
+	pub r15: u64,
+	/// r14 register
+	pub r14: u64,
+	/// r13 register
+	pub r13: u64,
+	/// r12 register
+	pub r12: u64,
+	/// rbp register
+	pub rbp: u64,
+	/// rbx register
+	pub rbx: u64,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 /// Registers
 pub struct Registers {
-	preserved: PreservedRegisters,
-	scratch: ScratchRegisters,
+	/// Preserved registers
+	pub preserved: PreservedRegisters,
+	/// Scratch registers
+	pub scratch: ScratchRegisters,
 }
 
 #[allow(dead_code)] // called from asm
@@ -161,48 +184,13 @@ extern "C" fn do_nothing() {
 	serial_print!("HANDLING SYSCALL");
 }
 
-// fn resume_program_execution(registers: Registers) {
-// 	// Or reference / pointer
-// 	unsafe {
-// 		asm!(
-// 			"mov rbp, rax",
-// 			"mov rbx, rdx",
-// 			in("rax") registers.preserved.rbp,
-// 			in("rdx") registers.preserved.rbx,
-// 			// TODO figure out if i need to say I'm changing rbp
-// 			options(noreturn)
-// 		);
-
-// 		asm!(
-// 			"",
-// 			// in("rbx") registers.preserved.rbx, //moved through rdx before
-// 			// in("rbp") registers.preserved.rbp, // Moved through rax before
-// 			in("r12") registers.preserved.r12,
-// 			in("r13") registers.preserved.r13,
-// 			in("r14") registers.preserved.r14,
-// 			in("r15") registers.preserved.r15,
-// 			in("r11") registers.scratch.r11,
-// 			in("r10") registers.scratch.r10,
-// 			in("r9") registers.scratch.r9,
-// 			in("r8") registers.scratch.r8,
-// 			in("rsi") registers.scratch.rsi,
-// 			in("rdi") registers.scratch.rdi,
-// 			in("rdx") registers.scratch.rdx,
-// 			in("rcx") registers.scratch.rcx,
-// 			in("rax") registers.scratch.rax,
-// 			options(noreturn)
-// 		);
-// 		asm!("sysretq", options(noreturn))
-// 	}
-// 	unimplemented!()
-// }
-
 #[naked]
 extern "C" fn handle_syscall() {
 	unsafe {
 		asm!(
 			// Push scratch registers
 			"
+			push rsp
 			push rax
 			push rcx
 			push rdx
@@ -242,7 +230,8 @@ extern "C" fn handle_syscall() {
 			pop rdi
 			pop rdx
 			pop rcx
-			pop rax",
+			pop rax
+			pop rsp",
 			"sysretq",
 			options(noreturn)
 		);

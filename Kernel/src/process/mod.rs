@@ -2,10 +2,10 @@ use crate::{
 	cpu::syscalls::{self, Registers},
 	mem::paging::{self, UserPageTable},
 };
-use alloc::{boxed::Box, collections::VecDeque};
+use alloc::collections::VecDeque;
 use lazy_static::lazy_static;
 use spin::Mutex;
-use x86_64::{structures::paging::PageTable, VirtAddr};
+use x86_64::VirtAddr;
 
 lazy_static! {
 	static ref QUEUE: Mutex<VecDeque<PCB>> = Mutex::new(VecDeque::new());
@@ -20,7 +20,7 @@ pub mod elf;
 
 enum State {
 	New { start: VirtAddr, stack: VirtAddr },
-	Running { registers: () },
+	Running { registers: Registers },
 }
 
 /// Process control block
@@ -33,7 +33,7 @@ pub struct PCB {
 }
 
 impl PCB {
-	fn run(&self) {
+	fn run_a(&self) {
 		// Switch to process page table
 		unsafe {
 			serial_println!("Switching table");
@@ -45,7 +45,43 @@ impl PCB {
 				serial_println!("Going to ring3 - start: {:?} stack: {:?}", start, stack);
 				syscalls::go_to_ring3(start, stack);
 			},
-			_ => unimplemented!(),
+			State::Running { registers } => {
+				unsafe {
+					asm!(
+						"mov rbp, {rbp}",
+						"mov rbx, {rbx}",
+						rbp = in(reg) registers.preserved.rbp,
+						rbx = in(reg) registers.preserved.rbx,
+						// TODO figure out if i need to say I'm changing rbp
+					);
+
+					asm!(
+						"",
+						// in("rbx") registers.preserved.rbx, //moved through rdx before
+						// in("rbp") registers.preserved.rbp, // Moved through rax before
+						in("r12") registers.preserved.r12,
+						in("r13") registers.preserved.r13,
+						in("r14") registers.preserved.r14,
+						in("r15") registers.preserved.r15,
+						in("r11") registers.scratch.r11,
+						in("r10") registers.scratch.r10,
+						in("r9") registers.scratch.r9,
+						in("r8") registers.scratch.r8,
+						in("rsi") registers.scratch.rsi,
+						in("rdi") registers.scratch.rdi,
+						in("rdx") registers.scratch.rdx, // This is getting overwritten...
+						in("rcx") registers.scratch.rcx,
+						in("rax") registers.scratch.rax,
+					);
+					asm!(
+						"push rdx",
+						"pop rsp",
+						"sysretq",
+						in("rdx") registers.scratch.rsp,
+						options(noreturn)
+					);
+				}
+			}
 		}
 	}
 }
@@ -58,13 +94,18 @@ pub fn run_next_process() {
 		unsafe {
 			QUEUE.force_unlock();
 		}
-		process.run();
+		process.run_a();
 	}
 }
 
 /// Context switch to next process
 pub fn context_switch(registers: &Registers) {
 	// TODO save state of last process
+	{
+		let mut lock = QUEUE.lock();
+		let process = &mut lock[0];
+		process.state = State::Running { registers: *registers };
+	}
 
 	serial_println!("Context switching!");
 	let temp_stack: *const u8 = unsafe { crate::cpu::gdt::STACK.as_ptr() };

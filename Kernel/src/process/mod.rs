@@ -46,6 +46,9 @@ impl PCB {
 				syscalls::go_to_ring3(start, stack);
 			},
 			State::Running { registers } => {
+				// address to temporarily store rax while fixing the stack.
+				let addr = registers.scratch.rsp - 0x08;
+
 				unsafe {
 					asm!(
 						"mov rbp, {rbp}",
@@ -54,6 +57,9 @@ impl PCB {
 						rbx = in(reg) registers.preserved.rbx,
 						// TODO figure out if i need to say I'm changing rbp
 					);
+					asm!("mov QWORD PTR [{addr}],rax",
+						addr = in(reg) addr,
+						in("rax") registers.scratch.rax);
 
 					asm!(
 						"",
@@ -73,7 +79,7 @@ impl PCB {
 					asm!(
 						"push rax",
 						"pop rsp",
-						"mov rax, QWORD PTR [rsp-0x10]", // rax from when it was pushed before
+						"mov rax, QWORD PTR [rsp-0x08]", // rax from when it was pushed before
 						"sysretq",
 						in("rax") registers.scratch.rsp,
 						options(noreturn)

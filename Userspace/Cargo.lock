@@ -5,3 +5,10 @@ version = 3
 [[package]]
 name = "shell"
 version = "0.1.0"
+dependencies = [
+ "standard",
+]
+
+[[package]]
+name = "standard"
+version = "0.1.0"

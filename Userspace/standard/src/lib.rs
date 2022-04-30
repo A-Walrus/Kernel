@@ -1,6 +1,7 @@
 #![no_std]
-#![no_main]
 #![feature(asm)]
+
+pub mod syscalls;
 
 macro_rules! syscall {
     ($($name:ident($a:ident, $($b:ident, $($c:ident, $($d:ident, $($e:ident, $($f:ident, )?)?)?)?)?);)+) => {
@@ -44,32 +45,8 @@ syscall! {
 	syscall5(a, b, c, d, e, f,);
 }
 
-fn print(s: &str) {
-	unsafe {
-		syscall2(1, s.as_ptr() as usize, s.len());
-	}
-}
-
-fn exit(status: usize) {
-	unsafe {
-		syscall1(2, status);
-	}
-}
-
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
-	for i in 0..20 {
-		print("B1 ");
-		print("B2 ");
-		print("B3 ");
-		print("B4 ");
-	}
-	exit(0);
-	loop {}
-}
-
 use core::panic::PanicInfo;
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
+pub fn panic(_info: &core::panic::PanicInfo) -> ! {
 	loop {}
 }

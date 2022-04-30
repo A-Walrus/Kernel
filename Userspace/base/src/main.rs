@@ -5,8 +5,6 @@ use standard::syscalls;
 
 #[no_mangle]
 pub extern "C" fn _start() {
-	for _ in 0..10 {
-		syscalls::print("GuyOS >  \n");
-	}
+	// YOUR CODE HERE
 	syscalls::exit(0);
 }

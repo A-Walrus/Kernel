@@ -97,6 +97,13 @@ impl PCB {
 
 /// Run the next process in the queue
 pub fn run_next_process() {
+	let temp_stack: *const u8 = unsafe { crate::cpu::gdt::STACK.as_ptr() };
+	// Switch to kernel stack
+	unsafe {
+		asm!("mov rsp, {stack}",
+		stack = in(reg) temp_stack)
+	}
+
 	loop {
 		let pid = QUEUE.lock()[0];
 		let lock = MAP.lock();
@@ -106,6 +113,30 @@ pub fn run_next_process() {
 		}
 		process.run_a();
 	}
+}
+
+/// Remvoe the currently running process
+pub fn remove_current_process() {
+	let mut lock = QUEUE.lock();
+	let pid = lock.pop_front().expect("No processes");
+
+	let prev_value = MAP.lock().remove(&pid);
+	assert!(prev_value.is_some());
+
+	drop(lock);
+
+	run_next_process();
+}
+
+/// Remove a process from running
+pub fn remove_process(pid: Pid) {
+	let prev_value = MAP.lock().remove(&pid);
+	assert!(prev_value.is_some());
+
+	let mut lock = QUEUE.lock();
+	let index = lock.iter().position(|x| *x == pid).unwrap();
+	let prev_value = lock.remove(index);
+	assert!(prev_value.is_some());
 }
 
 /// Context switch to next process
@@ -118,20 +149,13 @@ pub fn context_switch(registers: &Registers) {
 		process.state = State::Running { registers: *registers };
 	}
 
-	serial_println!("Context switching!");
-	let temp_stack: *const u8 = unsafe { crate::cpu::gdt::STACK.as_ptr() };
-	// Switch to kernel stack
-	unsafe {
-		asm!("mov rsp, {stack}",
-		stack = in(reg) temp_stack)
-	}
-
 	{
 		let mut lock = QUEUE.lock();
 		serial_println!("lock acquired");
 		let popped = lock.pop_front().expect("No processes in queue");
 		lock.push_back(popped);
 	}
+
 	serial_println!("running next process");
 	run_next_process()
 }

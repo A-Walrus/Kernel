@@ -1,6 +1,6 @@
 use core::{ptr::slice_from_raw_parts, str};
 
-use crate::{cpu::gdt::GDT, print, serial_print, serial_println};
+use crate::{cpu::gdt::GDT, print, process, serial_print, serial_println};
 use x86_64::{
 	instructions::segmentation::DS,
 	registers::{model_specific::*, rflags::RFlags},
@@ -30,7 +30,7 @@ pub struct SyscallResult(i64);
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 3] = [sys_debug, sys_print, sys_open_file];
+const SYSCALLS: [Syscall; 3] = [sys_debug, sys_print, sys_exit];
 
 fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
@@ -54,26 +54,33 @@ fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResul
 	}
 }
 
-fn sys_open_file(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
-	// This is not implemented
-	unimplemented!();
+// fn sys_open_file(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+// 	// This is not implemented
+// 	unimplemented!();
 
-	let ptr = ptr as *const u8;
-	// This is not sound. Who knows wha the user put as the pointer
-	let opt_slice;
-	unsafe {
-		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
-	}
-	if let Some(slice) = opt_slice {
-		let a = str::from_utf8(slice);
-		if let Ok(path) = a {
-			return SyscallResult(0);
-		} else {
-			return SyscallResult(-1);
-		}
-	} else {
-		return SyscallResult(-1); // Failiure
-	}
+// 	let ptr = ptr as *const u8;
+// 	// This is not sound. Who knows wha the user put as the pointer
+// 	let opt_slice;
+// 	unsafe {
+// 		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+// 	}
+// 	if let Some(slice) = opt_slice {
+// 		let a = str::from_utf8(slice);
+// 		if let Ok(path) = a {
+// 			return SyscallResult(0);
+// 		} else {
+// 			return SyscallResult(-1);
+// 		}
+// 	} else {
+// 		return SyscallResult(-1); // Failiure
+// 	}
+// }
+
+fn sys_exit(status: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	serial_println!("Process exited with status: {}", status);
+	process::remove_current_process();
+
+	SyscallResult(0) // I think this doesn't matter
 }
 
 fn sys_debug(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult {

@@ -50,14 +50,22 @@ fn print(s: &str) {
 	}
 }
 
+fn exit(status: usize) {
+	unsafe {
+		syscall1(2, status);
+	}
+}
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
-	loop {
+	for i in 0..20 {
 		print("B1 ");
 		print("B2 ");
 		print("B3 ");
 		print("B4 ");
 	}
+	exit(0);
+	loop {}
 }
 
 use core::panic::PanicInfo;

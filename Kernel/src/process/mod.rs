@@ -3,18 +3,23 @@ use crate::{
 	mem::paging::{self, UserPageTable},
 };
 use alloc::collections::VecDeque;
+use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use x86_64::VirtAddr;
 
+type Pid = usize;
+
 lazy_static! {
-	static ref QUEUE: Mutex<VecDeque<PCB>> = Mutex::new(VecDeque::new());
+	static ref QUEUE: Mutex<VecDeque<Pid>> = Mutex::new(VecDeque::new());
+}
+
+lazy_static! {
+	static ref MAP: Mutex<HashMap<Pid, PCB>> = Mutex::new(HashMap::new());
 }
 
 /// Module for working with elf executables
 pub mod elf;
-
-// type Pid = usize;
 
 // type OpenFiles = ();
 
@@ -93,10 +98,11 @@ impl PCB {
 /// Run the next process in the queue
 pub fn run_next_process() {
 	loop {
-		let lock = QUEUE.lock();
-		let process = lock.front().expect("No processes in queue");
+		let pid = QUEUE.lock()[0];
+		let lock = MAP.lock();
+		let process = lock.get(&pid).expect("process from queue not in hashmap");
 		unsafe {
-			QUEUE.force_unlock();
+			MAP.force_unlock();
 		}
 		process.run_a();
 	}
@@ -106,8 +112,9 @@ pub fn run_next_process() {
 pub fn context_switch(registers: &Registers) {
 	// TODO save state of last process
 	{
-		let mut lock = QUEUE.lock();
-		let process = &mut lock[0];
+		let pid: Pid = QUEUE.lock()[0];
+		let mut lock = MAP.lock();
+		let mut process = lock.get_mut(&pid).expect("process from queue not in hashmap");
 		process.state = State::Running { registers: *registers };
 	}
 
@@ -132,8 +139,24 @@ pub fn context_switch(registers: &Registers) {
 /// Add a new process to the queue
 pub fn add_process(executable_path: &str) -> Result<(), elf::ElfErr> {
 	let process = create_process(executable_path)?;
-	QUEUE.lock().push_back(process);
+	let new_pid = get_new_pid();
+
+	QUEUE.lock().push_back(new_pid);
+	let prev_key = MAP.lock().insert(new_pid, process);
+	assert!(prev_key.is_none());
 	Ok(())
+}
+
+fn get_new_pid() -> Pid {
+	let mut pid = 0;
+	let lock = MAP.lock();
+	loop {
+		if !lock.contains_key(&pid) {
+			break;
+		}
+		pid += 1;
+	}
+	pid
 }
 
 fn create_process(executable_path: &str) -> Result<PCB, elf::ElfErr> {

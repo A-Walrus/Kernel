@@ -123,6 +123,11 @@ pub fn remove_current_process() {
 	let prev_value = MAP.lock().remove(&pid);
 	assert!(prev_value.is_some());
 
+	if lock.is_empty() {
+		serial_println!("bye bye");
+		crate::end();
+	}
+
 	drop(lock);
 
 	run_next_process();

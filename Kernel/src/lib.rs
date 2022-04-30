@@ -45,6 +45,17 @@ pub mod process;
 
 use core::panic::PanicInfo;
 
+/// End the os
+pub fn end() {
+	fs::ext2::cleanup().expect("Failed to cleanup EXT2");
+	serial_println!("Finished cleanup");
+
+	serial_println!("The end");
+	loop {
+		x86_64::instructions::hlt()
+	}
+}
+
 /// Panic handler is called automatically when a panic occurs, and prints the information to serial
 /// for debugging.
 #[panic_handler]

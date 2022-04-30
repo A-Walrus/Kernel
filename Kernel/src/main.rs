@@ -32,17 +32,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		ext2::setup().expect("Failed to setup EXT2");
 		serial_println!("Finished setup");
 
-		process::add_process("/bin/a").expect("Failed to add process");
-		process::add_process("/bin/a").expect("Failed to add process");
+		// process::add_process("/bin/a").expect("Failed to add process");
 		process::add_process("/bin/b_exit").expect("Failed to add process");
 
 		process::run_next_process();
-
-		ext2::cleanup().expect("Failed to cleanup EXT2");
-		serial_println!("Finished cleanup");
 	}
-	serial_println!("The end");
-	loop {
-		x86_64::instructions::hlt()
-	}
+	loop {} // to make the compiler happy
 }

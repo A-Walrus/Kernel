@@ -166,14 +166,14 @@ pub fn context_switch(registers: &Registers) {
 }
 
 /// Add a new process to the queue
-pub fn add_process(executable_path: &str) -> Result<(), elf::ElfErr> {
+pub fn add_process(executable_path: &str) -> Result<Pid, elf::ElfErr> {
 	let process = create_process(executable_path)?;
 	let new_pid = get_new_pid();
 
 	QUEUE.lock().push_back(new_pid);
 	let prev_key = MAP.lock().insert(new_pid, process);
 	assert!(prev_key.is_none());
-	Ok(())
+	Ok(new_pid)
 }
 
 fn get_new_pid() -> Pid {

@@ -30,14 +30,14 @@ pub struct SyscallResult(i64);
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 3] = [sys_debug, sys_print, sys_exit];
+const SYSCALLS: [Syscall; 4] = [sys_debug, sys_print, sys_exit, sys_exec];
 
 fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
 	serial_println!("sys_print, ptr: {:?}, len: {}", ptr, len);
-	// This is not sound. Who knows wha the user put as the pointer
 	let opt_slice;
 	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
 		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
 	}
 	if let Some(slice) = opt_slice {
@@ -51,6 +51,34 @@ fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResul
 		}
 	} else {
 		return SyscallResult(-1); // Failiure
+	}
+}
+
+fn sys_exec(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let ptr = ptr as *const u8;
+	serial_println!("sys_exec, ptr: {:?}, len: {}", ptr, len);
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+
+	if let Some(slice) = opt_slice {
+		let a = str::from_utf8(slice);
+		if let Ok(s) = a {
+			serial_println!("Add process");
+			let res = crate::process::add_process(s);
+			serial_println!("Added process");
+			match res {
+				Ok(pid) => SyscallResult(pid as u32 as i64),
+				Err(_e) => SyscallResult(-1),
+			}
+		} else {
+			serial_println!("Invalid UTF print");
+			SyscallResult(-1)
+		}
+	} else {
+		SyscallResult(-1) // Failiure
 	}
 }
 

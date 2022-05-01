@@ -11,3 +11,9 @@ pub fn exit(status: usize) {
 		syscall1(2, status);
 	}
 }
+
+pub fn exec(path: &str) {
+	unsafe {
+		syscall2(3, path.as_ptr() as usize, path.len());
+	}
+}

@@ -97,13 +97,6 @@ impl PCB {
 
 /// Run the next process in the queue
 pub fn run_next_process() {
-	let temp_stack: *const u8 = unsafe { crate::cpu::gdt::STACK.as_ptr() };
-	// Switch to kernel stack
-	unsafe {
-		asm!("mov rsp, {stack}",
-		stack = in(reg) temp_stack)
-	}
-
 	loop {
 		let pid = QUEUE.lock()[0];
 		let lock = MAP.lock();

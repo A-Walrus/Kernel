@@ -181,9 +181,20 @@ pub struct Registers {
 
 #[allow(dead_code)] // called from asm
 #[no_mangle] // called from asm
+extern "C" fn get_new_stack_addr() -> *const u8 {
+	// Switch to kernel stack
+	let temp_stack: *const u8 = unsafe { crate::cpu::gdt::STACK.as_ptr() };
+	// unsafe {
+	// asm!("mov rsp, {stack}",
+	// stack = in(reg) temp_stack)
+	// }
+	return temp_stack;
+}
+
+#[allow(dead_code)] // called from asm
+#[no_mangle] // called from asm
 extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
 	serial_println!("HANDLING SYSCALL");
-
 	let registers: &mut Registers;
 	unsafe {
 		registers = &mut *registers_ptr;
@@ -244,8 +255,12 @@ extern "C" fn handle_syscall() {
 			push r14
 			push r15
 			",
-			"mov rdi, rsp", // C calling convention first variable
 			// "add rsp, 8",
+			// "call do_nothing",
+			"mov rbx, rsp", // C calling convention first variable
+			"call get_new_stack_addr",
+			"mov rsp, rax",
+			"mov rdi, rbx", // C calling convention first variable
 			"call handle_syscall_inner",
 			// Pop preserved registers
 			"

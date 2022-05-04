@@ -88,6 +88,17 @@ pub fn load_elf(path: &str, page_table: &mut PageTable) -> Result<(VirtAddr, Vir
 
 	paging::map(range, page_table, flags);
 
+	const HEAP_SIZE: u64 = 0x800000; // 8MiB
+	const HEAP_START: u64 = 0x0000400000000000;
+
+	let range = PageRangeInclusive::<Size4KiB> {
+		start: Page::containing_address(VirtAddr::new(HEAP_START)),
+		end: Page::containing_address(VirtAddr::new(HEAP_START + HEAP_SIZE)),
+	};
+	let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+
+	paging::map(range, page_table, flags);
+
 	serial_println!("Switching to kernel table");
 	unsafe {
 		paging::set_page_table_to_kernel();

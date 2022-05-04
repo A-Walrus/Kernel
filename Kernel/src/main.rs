@@ -33,7 +33,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		serial_println!("Finished setup");
 
 		// process::add_process("/bin/a").expect("Failed to add process");
-		process::add_process("/bin/shell").expect("Failed to add process");
+		// process::add_process("/bin/shell").expect("Failed to add process");
+		process::add_process("/bin/alloc").expect("Failed to add process");
 
 		process::run_next_process();
 	}

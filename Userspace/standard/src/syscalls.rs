@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use crate::{syscall0, syscall1, syscall2, syscall3, syscall4, syscall5};
 
 pub fn print(s: &str) {

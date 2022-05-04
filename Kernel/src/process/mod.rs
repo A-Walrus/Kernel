@@ -117,7 +117,6 @@ pub fn remove_current_process() {
 	assert!(prev_value.is_some());
 
 	if lock.is_empty() {
-		serial_println!("bye bye");
 		crate::end();
 	}
 

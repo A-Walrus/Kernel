@@ -1,10 +1,8 @@
 #![no_main]
 #![no_std]
 
-use standard::{init, syscalls};
+use standard::{init, print, println, syscalls};
 extern crate alloc;
-
-use alloc::{format, string::String};
 
 #[no_mangle]
 pub extern "C" fn _start() {
@@ -15,13 +13,13 @@ pub extern "C" fn _start() {
 
 	let n = 100;
 
-	syscalls::print(&format!("First {} Fibonachi numbers:\n", n));
+	// syscalls::print(&format!("First {} Fibonachi numbers:\n", n));
+	println!("First {} Fibonachi numbers:", n);
 
 	for _ in 0..n {
-		let s: String = format!("{}, ", a);
+		print!("{}, ", a);
 		b = a + b;
 		a = b - a;
-		syscalls::print(&s);
 	}
 	syscalls::exit(0);
 }

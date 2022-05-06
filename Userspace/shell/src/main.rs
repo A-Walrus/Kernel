@@ -10,6 +10,8 @@ pub extern "C" fn _start() {
 	for _ in 0..10 {
 		println!("GuyOS > ");
 	}
+	println!("starting another process");
 	syscalls::exec("/bin/b");
+	println!("started!");
 	syscalls::exit(0);
 }

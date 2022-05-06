@@ -10,9 +10,7 @@ pub fn print_a(s: &str) {
 #[macro_export]
 macro_rules! print {
 	($($arg:tt)*) => {
-		use alloc::format;
-		use standard::syscalls::print_a;
-		print_a(&format!($($arg)*))
+		$crate::syscalls::print_a(&alloc::format!($($arg)*))
 	};
 }
 

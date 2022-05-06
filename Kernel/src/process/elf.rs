@@ -2,7 +2,7 @@ use elf_rs::{self, Elf, ElfFile, ProgramType};
 
 use x86_64::{
 	addr::VirtAddr,
-	registers::control::Cr3Flags,
+	registers::control::Cr3,
 	structures::paging::{
 		page::{Page, PageRangeInclusive},
 		PageTable, PageTableFlags, Size4KiB,
@@ -38,6 +38,8 @@ pub fn load_elf(path: &str, page_table: &mut PageTable) -> Result<(VirtAddr, Vir
 		Elf::Elf64(elf) => elf,
 		_ => return Err(ElfErr::Elf32),
 	};
+
+	let prev_table = Cr3::read();
 
 	unsafe {
 		serial_println!("Switching to user table");
@@ -99,11 +101,9 @@ pub fn load_elf(path: &str, page_table: &mut PageTable) -> Result<(VirtAddr, Vir
 
 	paging::map(range, page_table, flags);
 
-	serial_println!("Switching to kernel table");
 	unsafe {
-		paging::set_page_table_to_kernel();
+		Cr3::write(prev_table.0, prev_table.1);
 	}
-	serial_println!("Switched to kernel table");
 
 	let entry = elf64.elf_header().entry_point();
 	Ok((VirtAddr::new(entry), VirtAddr::new(STACK_TOP)))

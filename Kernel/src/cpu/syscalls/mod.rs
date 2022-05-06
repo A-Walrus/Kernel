@@ -183,7 +183,8 @@ pub struct Registers {
 #[no_mangle] // called from asm
 extern "C" fn get_new_stack_addr() -> *const u8 {
 	// Switch to kernel stack
-	let temp_stack: *const u8 = unsafe { crate::cpu::gdt::STACK.as_ptr() };
+	use crate::cpu::gdt;
+	let temp_stack: *const u8 = unsafe { gdt::STACK.as_ptr().add(gdt::STACK_SIZE) };
 	// unsafe {
 	// asm!("mov rsp, {stack}",
 	// stack = in(reg) temp_stack)

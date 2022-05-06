@@ -9,7 +9,8 @@ use x86_64::{
 	VirtAddr,
 };
 
-const STACK_SIZE: usize = 4096 * 5;
+/// size of the user stack
+pub const STACK_SIZE: usize = 4096 * 8;
 /// Stack for interrupt handlers and syscalls
 pub static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
 

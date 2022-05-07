@@ -34,7 +34,6 @@ const SYSCALLS: [Syscall; 4] = [sys_debug, sys_print, sys_exit, sys_exec];
 
 fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
-	serial_println!("sys_print, ptr: {:?}, len: {}", ptr, len);
 	let opt_slice;
 	unsafe {
 		// This is not sound. Who knows what the user put as the pointer
@@ -195,7 +194,7 @@ extern "C" fn get_new_stack_addr() -> *const u8 {
 #[allow(dead_code)] // called from asm
 #[no_mangle] // called from asm
 extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
-	serial_println!("HANDLING SYSCALL");
+	// serial_println!("HANDLING SYSCALL");
 	let registers: &mut Registers;
 	unsafe {
 		registers = &mut *registers_ptr;

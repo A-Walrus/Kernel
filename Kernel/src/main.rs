@@ -8,7 +8,7 @@ use bootloader::{entry_point, BootInfo};
 use kernel::{
 	cpu::{gdt, interrupts, syscalls},
 	fs::ext2,
-	io::buffer,
+	io::{buffer, keyboard},
 	mem::{buddy, heap, paging},
 	process, serial_println,
 };
@@ -24,6 +24,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		heap::setup(buffer::calc_real_length(framebuffer));
 		interrupts::setup();
 		syscalls::setup();
+		keyboard::setup();
 		let screen = buffer::Screen::new_from_framebuffer(framebuffer);
 		let term = buffer::Terminal::new(screen);
 		unsafe {

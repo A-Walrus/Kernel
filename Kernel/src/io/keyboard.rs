@@ -2,7 +2,10 @@ use crate::{serial_print, serial_println};
 use lazy_static::lazy_static;
 use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
 use spin::Mutex;
-use x86_64::instructions::port::{Port, PortGeneric, ReadWriteAccess};
+use x86_64::{
+	instructions::port::{Port, PortGeneric, ReadWriteAccess},
+	structures::idt::InterruptStackFrame,
+};
 
 const DATA_PORT: u16 = 0x60; // Read/Write
 const _STATUS_PORT: u16 = 0x64; // Read
@@ -12,6 +15,15 @@ lazy_static! {
 	#[doc(hidden)]
 	static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> =
 		Mutex::new(Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore));
+}
+
+/// setup keyboard
+pub fn setup() {
+	crate::cpu::interrupts::register_callback(1, keyboard_interrupt);
+}
+
+fn keyboard_interrupt(_stack_frame: &InterruptStackFrame) {
+	read_input()
 }
 
 /// Called on keyboard interrupt. This reads the scan code from the keyboard data port, and passes
@@ -31,7 +43,7 @@ fn parse_scan_code(scancode: u8) {
 	if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
 		if let Some(key) = keyboard.process_keyevent(key_event) {
 			match key {
-				DecodedKey::Unicode(character) => print!("{}", character),
+				DecodedKey::Unicode(character) => serial_print!("{}", character),
 				DecodedKey::RawKey(key) => serial_println!("{:?}", key),
 			}
 		}

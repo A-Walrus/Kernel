@@ -16,7 +16,6 @@ const IRQS: usize = 16;
 
 /// Mutex wrapping chained pics. This is the interface for communicating with the pics.
 pub static PICS: spin::Mutex<ChainedPics> = spin::Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
-
 mod codegen;
 use codegen::*;
 
@@ -51,8 +50,8 @@ lazy_static! {
 
 		set_irq_handlers(&mut idt);
 
-		register_callback(0,timer_interrupt_handler);
-		register_callback(1,keyboard_interrupt_handler);
+		// register_callback(0,timer_interrupt_handler);
+		// register_callback(1,keyboard_interrupt_handler);
 
 		Mutex::new(idt)
 	};
@@ -106,10 +105,10 @@ fn timer_interrupt_handler(_stack_frame: &InterruptStackFrame) {
 	// print!(".");
 }
 
-fn keyboard_interrupt_handler(_stack_frame: &InterruptStackFrame) {
-	use crate::io::keyboard;
-	keyboard::read_input();
-}
+// fn keyboard_interrupt_handler(_stack_frame: &InterruptStackFrame) {
+// use crate::io::keyboard;
+// keyboard::read_input();
+// }
 
 extern "x86-interrupt" fn divide_error_handler(stack_frame: InterruptStackFrame) {
 	exception("divide error", stack_frame)

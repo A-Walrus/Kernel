@@ -41,13 +41,11 @@ impl PCB {
 	fn run_a(&self) {
 		// Switch to process page table
 		unsafe {
-			serial_println!("Switching table");
 			paging::set_page_table(&self.page_table.0);
-			serial_println!("Switched table");
 		}
 		match self.state {
 			State::New { start, stack } => unsafe {
-				serial_println!("Going to ring3 - start: {:?} stack: {:?}", start, stack);
+				// serial_println!("Going to ring3 - start: {:?} stack: {:?}", start, stack);
 				syscalls::go_to_ring3(start, stack);
 			},
 			State::Running { registers } => {
@@ -148,12 +146,9 @@ pub fn context_switch(registers: &Registers) {
 
 	{
 		let mut lock = QUEUE.lock();
-		serial_println!("lock acquired");
 		let popped = lock.pop_front().expect("No processes in queue");
 		lock.push_back(popped);
 	}
-
-	serial_println!("running next process");
 	run_next_process()
 }
 

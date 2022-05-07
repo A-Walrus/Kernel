@@ -94,21 +94,16 @@ fn irq_handler(stack_frame: InterruptStackFrame, irq: u8) {
 /// can register multiple functions on the same irq, and they will be called in the order that they
 /// are registered.
 pub fn register_callback(irq: u8, callback: fn(&InterruptStackFrame)) {
-	let callbacks = &mut CALLBACKS.lock();
-	match &mut callbacks[irq as usize] {
-		None => callbacks[irq as usize] = Some(vec![callback]),
-		Some(vec) => vec.push(callback),
+	{
+		x86_64::instructions::interrupts::disable();
+		let callbacks = &mut CALLBACKS.lock();
+		match &mut callbacks[irq as usize] {
+			None => callbacks[irq as usize] = Some(vec![callback]),
+			Some(vec) => vec.push(callback),
+		}
 	}
+	x86_64::instructions::interrupts::enable();
 }
-
-fn timer_interrupt_handler(_stack_frame: &InterruptStackFrame) {
-	// print!(".");
-}
-
-// fn keyboard_interrupt_handler(_stack_frame: &InterruptStackFrame) {
-// use crate::io::keyboard;
-// keyboard::read_input();
-// }
 
 extern "x86-interrupt" fn divide_error_handler(stack_frame: InterruptStackFrame) {
 	exception("divide error", stack_frame)

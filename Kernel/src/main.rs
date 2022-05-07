@@ -33,9 +33,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		ext2::setup().expect("Failed to setup EXT2");
 		serial_println!("Finished setup");
 
-		// process::add_process("/bin/a").expect("Failed to add process");
 		process::add_process("/bin/shell").expect("Failed to add process");
-		// process::add_process("/bin/fibonachi").expect("Failed to add process");
 
 		process::run_next_process();
 	}

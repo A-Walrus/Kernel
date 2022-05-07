@@ -2,7 +2,7 @@ use crate::{
 	cpu::syscalls::{self, Registers},
 	mem::paging::{self, UserPageTable},
 };
-use alloc::collections::VecDeque;
+use alloc::{collections::VecDeque, string::String};
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -15,7 +15,8 @@ lazy_static! {
 }
 
 lazy_static! {
-	static ref MAP: Mutex<HashMap<Pid, PCB>> = Mutex::new(HashMap::new());
+	/// Hashmap containg PCBs of processes by Pid
+	pub static ref MAP: Mutex<HashMap<Pid, PCB>> = Mutex::new(HashMap::new());
 }
 
 /// Module for working with elf executables
@@ -33,12 +34,30 @@ pub struct PCB {
 	// pid: Pid,
 	state: State,
 	page_table: UserPageTable,
+	/// Input buffer for the process
+	pub input_buffer: String,
 	// registers: (),
 	// open_files: OpenFiles,
 }
 
+/// Get process in foreground
+pub fn foreground_process() -> Pid {
+	// TODO actual foreground
+	QUEUE.lock()[0]
+}
+
+/// Get currenty running process
+pub fn running_process() -> Pid {
+	QUEUE.lock()[0]
+}
+
 impl PCB {
-	fn run_a(&self) {
+	/// append input to this processes input buffer
+	pub fn append_input(&mut self, character: char) {
+		self.input_buffer.push(character);
+	}
+
+	fn try_run(&self) {
 		// Switch to process page table
 		unsafe {
 			paging::set_page_table(&self.page_table.0);
@@ -102,7 +121,7 @@ pub fn run_next_process() {
 		unsafe {
 			MAP.force_unlock();
 		}
-		process.run_a();
+		process.try_run();
 	}
 }
 
@@ -181,6 +200,7 @@ fn create_process(executable_path: &str) -> Result<PCB, elf::ElfErr> {
 	let (start, stack) = elf::load_elf(executable_path, &mut page_table.0)?;
 	Ok(PCB {
 		state: State::New { stack, start },
+		input_buffer: String::new(),
 		page_table,
 	})
 }

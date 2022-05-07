@@ -34,3 +34,9 @@ pub fn exec(path: &str) {
 		syscall2(3, path.as_ptr() as usize, path.len());
 	}
 }
+
+pub fn get_input(buffer: &mut [u8]) {
+	unsafe {
+		syscall2(4, buffer.as_ptr() as usize, buffer.len());
+	}
+}

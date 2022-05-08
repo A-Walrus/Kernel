@@ -33,6 +33,7 @@ enum State {
 pub struct PCB {
 	// pid: Pid,
 	state: State,
+	blocked: bool,
 	page_table: UserPageTable,
 	/// Input buffer for the process
 	pub input_buffer: String,
@@ -51,10 +52,17 @@ pub fn running_process() -> Pid {
 	QUEUE.lock()[0]
 }
 
+/// Block the currently running process
+pub fn block_current() {
+	let pid = running_process();
+	MAP.lock().get_mut(&pid).expect("running process not in queue").blocked = true;
+}
+
 impl PCB {
 	/// append input to this processes input buffer
 	pub fn append_input(&mut self, character: char) {
 		self.input_buffer.push(character);
+		self.blocked = false;
 	}
 
 	fn try_run(&self) {
@@ -115,13 +123,21 @@ impl PCB {
 /// Run the next process in the queue
 pub fn run_next_process() {
 	loop {
-		let pid = QUEUE.lock()[0];
-		let lock = MAP.lock();
-		let process = lock.get(&pid).expect("process from queue not in hashmap");
-		unsafe {
-			MAP.force_unlock();
+		x86_64::instructions::interrupts::disable();
+		let len = QUEUE.lock().len();
+		for i in 0..len {
+			let pid = QUEUE.lock()[i];
+			let lock = MAP.lock();
+			let process = lock.get(&pid).expect("process from queue not in hashmap");
+			if !process.blocked {
+				unsafe {
+					MAP.force_unlock();
+				}
+				process.try_run();
+			}
 		}
-		process.try_run();
+		x86_64::instructions::interrupts::enable();
+		x86_64::instructions::hlt();
 	}
 }
 
@@ -155,7 +171,6 @@ pub fn remove_process(pid: Pid) {
 
 /// Context switch to next process
 pub fn context_switch(registers: &Registers) {
-	// TODO save state of last process
 	{
 		let pid: Pid = QUEUE.lock()[0];
 		let mut lock = MAP.lock();
@@ -201,6 +216,7 @@ fn create_process(executable_path: &str) -> Result<PCB, elf::ElfErr> {
 	Ok(PCB {
 		state: State::New { stack, start },
 		input_buffer: String::new(),
+		blocked: false,
 		page_table,
 	})
 }

@@ -1,4 +1,9 @@
-use core::{ptr::slice_from_raw_parts, str};
+use alloc::string::String;
+use core::{
+	cmp::min,
+	ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
+	str,
+};
 
 use crate::{cpu::gdt::GDT, print, process, serial_print, serial_println};
 use x86_64::{
@@ -23,9 +28,14 @@ use x86_64::{
 // R11 saved rflags
 // RDI arg
 
-#[repr(transparent)]
+use SyscallResult::*;
 /// Result of a syscall
-pub struct SyscallResult(i64);
+pub enum SyscallResult {
+	/// The syscall has finished and this is the result
+	Result(i64),
+	/// The syscall has not finished and must be blocked
+	Blocked,
+}
 
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
@@ -33,22 +43,30 @@ pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg
 const SYSCALLS: [Syscall; 5] = [sys_debug, sys_print, sys_exit, sys_exec, sys_input];
 
 fn sys_input(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
-	let ptr = ptr as *const u8;
+	let ptr = ptr as *mut u8;
 	let opt_slice;
 	unsafe {
 		// This is not sound. Who knows what the user put as the pointer
-		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+		opt_slice = slice_from_raw_parts_mut(ptr, len as usize).as_mut();
 	}
 	if let Some(slice) = opt_slice {
 		let running = process::running_process();
 		let mut lock = process::MAP.lock();
 		let process = lock.get_mut(&running).expect("running process not in hashmap");
 		serial_println!("SYS INPUT. Buffer contains {}", process.input_buffer);
+		let buffer: &mut String = &mut process.input_buffer;
 
-		// TODO all of this
-		return SyscallResult(0); // Failiure
+		if buffer.len() > 0 {
+			let amount_to_take = min(buffer.len(), slice.len());
+			slice[..amount_to_take].copy_from_slice(&buffer.as_bytes()[..amount_to_take]);
+
+			buffer.drain(0..amount_to_take);
+			return Result(amount_to_take as i64);
+		} else {
+			return Blocked;
+		}
 	} else {
-		return SyscallResult(-1); // Failiure
+		return Result(-1); // Failiure
 	}
 }
 
@@ -63,13 +81,13 @@ fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResul
 		let a = str::from_utf8(slice);
 		if let Ok(s) = a {
 			print!("{}", s);
-			return SyscallResult(0);
+			return Result(0);
 		} else {
 			serial_println!("Invalid UTF print");
-			return SyscallResult(-1);
+			return Result(-1);
 		}
 	} else {
-		return SyscallResult(-1); // Failiure
+		return Result(-1); // Failiure
 	}
 }
 
@@ -89,15 +107,15 @@ fn sys_exec(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult
 			let res = crate::process::add_process(s);
 			serial_println!("Added process");
 			match res {
-				Ok(pid) => SyscallResult(pid as u32 as i64),
-				Err(_e) => SyscallResult(-1),
+				Ok(pid) => Result(pid as u32 as i64),
+				Err(_e) => Result(-1),
 			}
 		} else {
 			serial_println!("Invalid UTF print");
-			SyscallResult(-1)
+			Result(-1)
 		}
 	} else {
-		SyscallResult(-1) // Failiure
+		Result(-1) // Failiure
 	}
 }
 
@@ -127,7 +145,7 @@ fn sys_exit(status: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResul
 	serial_println!("Process exited with status: {}", status);
 	process::remove_current_process();
 
-	SyscallResult(0) // I think this doesn't matter
+	Result(0) // I think this doesn't matter
 }
 
 fn sys_debug(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult {
@@ -141,7 +159,7 @@ fn sys_debug(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -
 		arg4,
 		arg5
 	);
-	return SyscallResult(0); // Success
+	return Result(0); // Success
 }
 
 #[repr(C)]
@@ -188,6 +206,9 @@ pub struct PreservedRegisters {
 	pub rbx: u64,
 }
 
+const STACK_SIZE: usize = 4096 * 8;
+static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 /// Registers
@@ -202,8 +223,7 @@ pub struct Registers {
 #[no_mangle] // called from asm
 extern "C" fn get_new_stack_addr() -> *const u8 {
 	// Switch to kernel stack
-	use crate::cpu::gdt;
-	let temp_stack: *const u8 = unsafe { gdt::STACK.as_ptr().add(gdt::STACK_SIZE) };
+	let temp_stack: *const u8 = unsafe { STACK.as_ptr().add(STACK_SIZE) };
 	// unsafe {
 	// asm!("mov rsp, {stack}",
 	// stack = in(reg) temp_stack)
@@ -232,10 +252,17 @@ extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
 			let r10 = scratch.r10;
 			let result = func(rdi, rsi, rdx, r10, r8, r9);
 
-			scratch.rax = result.0;
+			match result {
+				Result(r) => {
+					scratch.rax = r;
+					crate::process::context_switch(registers);
+				}
+				Blocked => {
+					crate::process::block_current();
+					process::run_next_process();
+				}
+			}
 
-			// TODO figure this out
-			crate::process::context_switch(registers);
 			return;
 		}
 		None => {

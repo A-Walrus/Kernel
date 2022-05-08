@@ -9,8 +9,9 @@ pub extern "C" fn _start() {
 	init();
 	loop {
 		println!("GuyOS > ");
-		let mut buf = [0; 128];
+		let mut buf = [0; 16];
 		syscalls::get_input(&mut buf);
+		println!("{:?}", buf);
 	}
 	syscalls::exit(0);
 }

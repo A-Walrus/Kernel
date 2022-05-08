@@ -62,7 +62,10 @@ impl PCB {
 	/// append input to this processes input buffer
 	pub fn append_input(&mut self, character: char) {
 		self.input_buffer.push(character);
-		self.blocked = false;
+		if self.blocked {
+			// TODO, actually do the thing
+			self.blocked = false;
+		}
 	}
 
 	fn try_run(&self) {
@@ -125,16 +128,20 @@ pub fn run_next_process() {
 	loop {
 		x86_64::instructions::interrupts::disable();
 		let len = QUEUE.lock().len();
-		for i in 0..len {
-			let pid = QUEUE.lock()[i];
+		for _ in 0..len {
+			let pid = QUEUE.lock()[0];
 			let lock = MAP.lock();
 			let process = lock.get(&pid).expect("process from queue not in hashmap");
 			if !process.blocked {
+				serial_println!("{}", pid);
 				unsafe {
 					MAP.force_unlock();
 				}
 				process.try_run();
+			} else {
+				serial_println!("blocked");
 			}
+			cycle();
 		}
 		x86_64::instructions::interrupts::enable();
 		x86_64::instructions::hlt();
@@ -169,6 +176,14 @@ pub fn remove_process(pid: Pid) {
 	assert!(prev_value.is_some());
 }
 
+fn cycle() {
+	{
+		let mut lock = QUEUE.lock();
+		let popped = lock.pop_front().expect("No processes in queue");
+		lock.push_back(popped);
+	}
+}
+
 /// Context switch to next process
 pub fn context_switch(registers: &Registers) {
 	{
@@ -177,12 +192,8 @@ pub fn context_switch(registers: &Registers) {
 		let mut process = lock.get_mut(&pid).expect("process from queue not in hashmap");
 		process.state = State::Running { registers: *registers };
 	}
+	cycle();
 
-	{
-		let mut lock = QUEUE.lock();
-		let popped = lock.pop_front().expect("No processes in queue");
-		lock.push_back(popped);
-	}
 	run_next_process()
 }
 

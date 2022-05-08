@@ -1,4 +1,7 @@
-guestmount -a image.img -m /dev/sda1 Mountpoint
-rsync -rvu --delete -L "FileSystem/" "Mountpoint"
-guestunmount Mountpoint
+sudo losetup -D
+sudo losetup -f -P image.img
+sudo mount /dev/loop0p1 Mountpoint
+sudo rsync -rvu --delete -L "FileSystem/" "Mountpoint"
+sudo umount /dev/loop0p1
+sudo losetup -D
 cp image.img disk.img

@@ -255,21 +255,17 @@ extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
 			match result {
 				Result(r) => {
 					scratch.rax = r;
-					crate::process::context_switch(registers);
 				}
 				Blocked => {
 					crate::process::block_current();
-					process::run_next_process();
 				}
 			}
-
-			return;
+			crate::process::context_switch(registers);
 		}
 		None => {
 			unimplemented!("INVALID SYSCALL");
 		}
 	}
-	// TODO cleanup stack
 }
 
 #[no_mangle] // called from asm
@@ -283,6 +279,7 @@ extern "C" fn handle_syscall() {
 		asm!(
 			// Push scratch registers
 			"
+			cli
 			push rsp
 			push rax
 			push rcx

@@ -133,13 +133,12 @@ pub fn run_next_process() {
 			let lock = MAP.lock();
 			let process = lock.get(&pid).expect("process from queue not in hashmap");
 			if !process.blocked {
-				serial_println!("{}", pid);
 				unsafe {
 					MAP.force_unlock();
 				}
 				process.try_run();
 			} else {
-				serial_println!("blocked");
+				// serial_println!("blocked");
 			}
 			cycle();
 		}

@@ -40,3 +40,20 @@ pub fn get_input(buffer: &mut [u8]) {
 		syscall2(4, buffer.as_ptr() as usize, buffer.len());
 	}
 }
+use alloc::string::String;
+
+pub fn read_line() -> String {
+	let mut s = String::new();
+	loop {
+		let mut buf = [0];
+		get_input(&mut buf);
+		let char = buf[0] as char;
+		print!("{}", char);
+		if char == '\n' {
+			break;
+		} else {
+			s.push(char);
+		}
+	}
+	s
+}

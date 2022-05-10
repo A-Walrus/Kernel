@@ -51,9 +51,9 @@ pub fn end() {
 	serial_println!("Finished cleanup");
 
 	serial_println!("The end");
-	loop {
-		x86_64::instructions::hlt()
-	}
+
+	println!("Shutting down...");
+	util::qemu::exit();
 }
 
 /// Panic handler is called automatically when a panic occurs, and prints the information to serial

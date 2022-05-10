@@ -894,7 +894,7 @@ fn get_inode_blocks(inode: InodeData, b_reader: &mut BlockReader, with_parents: 
 	Ok(blocks)
 }
 
-fn get_sub_blocks<'a>(b_reader: &mut BlockReader<'a>, block: Block) -> Result<&'a mut [Block], IOError> {
+fn get_sub_blocks(b_reader: &mut BlockReader, block: Block) -> Result<&'static mut [Block], IOError> {
 	let slice = b_reader.read_block(block)?;
 
 	unsafe {
@@ -939,15 +939,15 @@ fn get_indirect_blocks(
 }
 
 /// File handle
-pub struct File<'a> {
+pub struct File {
 	inode: Inode,
 	inode_data: InodeData,
-	reader: BlockReader<'a>,
+	reader: BlockReader,
 	position: usize,
 	blocks: Vec<Block>,
 }
 
-impl<'a> File<'a> {
+impl File {
 	/// get file handle from path
 	pub fn from_path(path: &str) -> Result<Self, Ext2Err> {
 		let inode = path_to_inode(path)?;
@@ -972,7 +972,7 @@ impl<'a> File<'a> {
 		})
 	}
 }
-impl<'a> Read for File<'a> {
+impl Read for File {
 	fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, IOError> {
 		let to_read = min(buf.len(), self.inode_data.size_lower as usize - self.position);
 		let mut left_to_read = to_read;
@@ -993,7 +993,7 @@ impl<'a> Read for File<'a> {
 	}
 }
 
-impl<'a> Seek for File<'a> {
+impl Seek for File {
 	fn seek(&mut self, pos: SeekFrom) -> Result<usize, IOError> {
 		match pos {
 			SeekFrom::Start(offset) => {
@@ -1013,7 +1013,7 @@ impl<'a> Seek for File<'a> {
 	}
 }
 
-impl<'a> Write for File<'a> {
+impl Write for File {
 	fn write(&mut self, mut buf: &[u8]) -> Result<usize, IOError> {
 		let old_block_count = self.blocks.len();
 
@@ -1076,7 +1076,7 @@ impl<'a> Write for File<'a> {
 	}
 }
 
-impl<'a> Drop for File<'a> {
+impl Drop for File {
 	fn drop(&mut self) {
 		let ext = get_ext!();
 		*ext.lock().get_inode_data_mut(self.inode) = self.inode_data;

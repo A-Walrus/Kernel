@@ -1,6 +1,6 @@
 use crate::{
 	cpu::syscalls::{self, Registers},
-	fs::ext2::File,
+	fs::ext2::{Ext2Err, File},
 	mem::paging::{self, UserPageTable},
 };
 use alloc::{collections::VecDeque, string::String};
@@ -25,28 +25,31 @@ pub mod elf;
 
 /// A struct managing open files
 pub struct OpenFiles {
-	// handles: HashMap<Handle, File>,
-	handles: (),
+	handles: HashMap<Handle, File>,
+	next: Handle, // handles: (),
 }
+
+unsafe impl Send for PCB {}
+unsafe impl Sync for PCB {}
 
 type Handle = u32;
 impl OpenFiles {
 	fn new() -> Self {
-		Self { handles: () }
+		Self {
+			handles: HashMap::new(),
+			next: 0,
+		}
 	}
 
 	/// Open a file, creting a handle
-	pub fn open(&mut self, path: &str) -> Result<Handle, ()> {
+	pub fn open(&mut self, path: &str) -> Result<Handle, Ext2Err> {
 		serial_println!("path {}", path);
-		let file_res = File::from_path(path);
-		match file_res {
-			Ok(a) => {
-				serial_println!("YAY")
-			}
-			Err(_) => serial_println!("Nay"),
-		}
-
-		unimplemented!();
+		let file = File::from_path(path)?;
+		let handle = self.next;
+		self.next += 1;
+		let prev = self.handles.insert(handle, file);
+		assert!(prev.is_none());
+		Ok(handle)
 	}
 }
 

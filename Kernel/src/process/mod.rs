@@ -29,11 +29,38 @@ enum State {
 	Running { registers: Registers },
 }
 
+/// Data needed when unblocking process
+pub enum BlockData {
+	/// data for input syscall
+	Input {
+		/// slice to write to
+		slice: *mut [u8],
+	},
+}
+
+unsafe impl Sync for BlockData {}
+unsafe impl Send for BlockData {}
+
+enum BlockState {
+	Blocked { still: bool, data: BlockData },
+	Ready,
+}
+
+impl BlockState {
+	fn ready(&self) -> bool {
+		match self {
+			BlockState::Ready => true,
+			BlockState::Blocked { still: false, data: _ } => true,
+			_ => false,
+		}
+	}
+}
+
 /// Process control block
 pub struct PCB {
 	// pid: Pid,
 	state: State,
-	blocked: bool,
+	block_state: BlockState,
 	page_table: UserPageTable,
 	/// Input buffer for the process
 	pub input_buffer: String,
@@ -53,22 +80,27 @@ pub fn running_process() -> Pid {
 }
 
 /// Block the currently running process
-pub fn block_current() {
+pub fn block_current(data: BlockData) {
 	let pid = running_process();
-	MAP.lock().get_mut(&pid).expect("running process not in queue").blocked = true;
+	MAP.lock()
+		.get_mut(&pid)
+		.expect("running process not in queue")
+		.block_state = BlockState::Blocked { still: true, data };
 }
 
 impl PCB {
 	/// append input to this processes input buffer
 	pub fn append_input(&mut self, character: char) {
 		self.input_buffer.push(character);
-		if self.blocked {
-			// TODO, actually do the thing
-			self.blocked = false;
+		match &mut self.block_state {
+			BlockState::Blocked { still, data: _ } => {
+				*still = false;
+			}
+			_ => {}
 		}
 	}
 
-	fn try_run(&self) {
+	fn try_run(&mut self) {
 		// Switch to process page table
 		unsafe {
 			paging::set_page_table(&self.page_table.0);
@@ -79,6 +111,22 @@ impl PCB {
 				syscalls::go_to_ring3(start, stack);
 			},
 			State::Running { registers } => {
+				if let BlockState::Blocked {
+					still: false,
+					data: BlockData::Input { slice },
+				} = self.block_state
+				{
+					let slice = unsafe { slice.as_mut().unwrap() };
+					use core::cmp::min;
+
+					let buffer: &mut String = &mut self.input_buffer;
+
+					let amount_to_take = min(buffer.len(), slice.len());
+					slice[..amount_to_take].copy_from_slice(&buffer.as_bytes()[..amount_to_take]);
+
+					buffer.drain(0..amount_to_take);
+				}
+
 				// address to temporarily store rax while fixing the stack.
 				let addr = registers.scratch.rsp - 0x08;
 
@@ -130,9 +178,9 @@ pub fn run_next_process() {
 		let len = QUEUE.lock().len();
 		for _ in 0..len {
 			let pid = QUEUE.lock()[0];
-			let lock = MAP.lock();
-			let process = lock.get(&pid).expect("process from queue not in hashmap");
-			if !process.blocked {
+			let mut lock = MAP.lock();
+			let process = lock.get_mut(&pid).expect("process from queue not in hashmap");
+			if process.block_state.ready() {
 				unsafe {
 					MAP.force_unlock();
 				}
@@ -226,7 +274,7 @@ fn create_process(executable_path: &str) -> Result<PCB, elf::ElfErr> {
 	Ok(PCB {
 		state: State::New { stack, start },
 		input_buffer: String::new(),
-		blocked: false,
+		block_state: BlockState::Ready,
 		page_table,
 	})
 }

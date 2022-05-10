@@ -46,12 +46,16 @@ fn parse_scan_code(scancode: u8) {
 		if let Some(key) = keyboard.process_keyevent(key_event) {
 			match key {
 				DecodedKey::Unicode(character) => {
-					let fg_pid = process::foreground_process();
-					process::MAP
-						.lock()
-						.get_mut(&fg_pid)
-						.expect("foreground process not in hashmap")
-						.append_input(character);
+					for process in process::MAP.lock().iter_mut() {
+						process.1.append_input(character)
+					}
+
+					// let fg_pid = process::foreground_process();
+					// process::MAP
+					// .lock()
+					// .get_mut(&fg_pid)
+					// .expect("foreground process not in hashmap")
+					// .append_input(character);
 				}
 				DecodedKey::RawKey(key) => serial_println!("{:?}", key),
 			}

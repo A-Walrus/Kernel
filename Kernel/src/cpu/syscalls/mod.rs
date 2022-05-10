@@ -28,13 +28,14 @@ use x86_64::{
 // R11 saved rflags
 // RDI arg
 
+use process::BlockData;
 use SyscallResult::*;
 /// Result of a syscall
 pub enum SyscallResult {
 	/// The syscall has finished and this is the result
 	Result(i64),
 	/// The syscall has not finished and must be blocked
-	Blocked,
+	Blocked(BlockData),
 }
 
 /// A system call function
@@ -53,7 +54,6 @@ fn sys_input(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResul
 		let running = process::running_process();
 		let mut lock = process::MAP.lock();
 		let process = lock.get_mut(&running).expect("running process not in hashmap");
-		serial_println!("SYS INPUT. Buffer contains {}", process.input_buffer);
 		let buffer: &mut String = &mut process.input_buffer;
 
 		if buffer.len() > 0 {
@@ -63,7 +63,7 @@ fn sys_input(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResul
 			buffer.drain(0..amount_to_take);
 			return Result(amount_to_take as i64);
 		} else {
-			return Blocked;
+			return Blocked(BlockData::Input { slice });
 		}
 	} else {
 		return Result(-1); // Failiure
@@ -256,8 +256,8 @@ extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
 				Result(r) => {
 					scratch.rax = r;
 				}
-				Blocked => {
-					crate::process::block_current();
+				Blocked(data) => {
+					crate::process::block_current(data);
 				}
 			}
 			crate::process::context_switch(registers);

@@ -18,8 +18,15 @@ pub extern "C" fn _start() {
 			Some("quit") => {
 				break;
 			}
-			Some("open") => match split.next() {
-				Some(path) => syscalls::open_file(path),
+			Some("print") => match split.next() {
+				Some(path) => {
+					let handle = syscalls::open_file(path);
+					if let Ok(handle) = handle {
+						let mut buffer = [0; 128];
+						syscalls::read(&mut buffer, handle);
+						println!("{:?}", buffer);
+					}
+				}
 				None => {
 					println!("More args needed")
 				}

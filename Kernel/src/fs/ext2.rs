@@ -1144,6 +1144,8 @@ pub enum Ext2Err {
 	NoParentDir,
 	/// Ext2 signature is invalid
 	InvalidSignature,
+	/// handle doesn't exist
+	NoHandle,
 }
 
 impl From<IOError> for Ext2Err {

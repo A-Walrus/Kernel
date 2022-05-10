@@ -41,9 +41,20 @@ pub fn get_input(buffer: &mut [u8]) {
 	}
 }
 
-pub fn open_file(path: &str) {
+type Handle = u32;
+
+pub fn read(buffer: &mut [u8], handle: Handle) {
 	unsafe {
-		syscall2(5, path.as_ptr() as usize, path.len());
+		syscall3(6, buffer.as_ptr() as usize, buffer.len(), handle as usize);
+	}
+}
+
+pub fn open_file(path: &str) -> Result<Handle, ()> {
+	let handle = unsafe { syscall2(5, path.as_ptr() as usize, path.len()) };
+	if handle >= 0 {
+		Ok(handle as Handle)
+	} else {
+		Err(())
 	}
 }
 

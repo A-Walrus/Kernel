@@ -11,7 +11,7 @@ extern crate alloc;
 macro_rules! syscall {
     ($($name:ident($a:ident, $($b:ident, $($c:ident, $($d:ident, $($e:ident, $($f:ident, )?)?)?)?)?);)+) => {
         $(
-            pub unsafe fn $name(mut $a: usize, $($b: usize, $($c: usize, $($d: usize, $($e: usize, $($f: usize)?)?)?)?)?) -> usize {
+            pub unsafe fn $name(mut $a: i64, $($b: usize, $($c: usize, $($d: usize, $($e: usize, $($f: usize)?)?)?)?)?) -> i64 {
                 asm!(
                     "syscall",
                     inout("rax") $a,

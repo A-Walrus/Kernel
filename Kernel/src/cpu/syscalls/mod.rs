@@ -5,7 +5,7 @@ use core::{
 	str,
 };
 
-use crate::{cpu::gdt::GDT, print, process, serial_print, serial_println};
+use crate::{cpu::gdt::GDT, print, process, process::Handle, serial_print, serial_println};
 use x86_64::{
 	instructions::segmentation::DS,
 	registers::{model_specific::*, rflags::RFlags},
@@ -41,7 +41,7 @@ pub enum SyscallResult {
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 6] = [sys_debug, sys_print, sys_exit, sys_exec, sys_input, sys_open];
+const SYSCALLS: [Syscall; 7] = [sys_debug, sys_print, sys_exit, sys_exec, sys_input, sys_open, sys_read];
 
 fn sys_open(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
@@ -67,6 +67,34 @@ fn sys_open(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult
 		} else {
 			serial_println!("Invalid UTF path");
 			Result(-1)
+		}
+	} else {
+		Result(-1) // Failiure
+	}
+}
+
+fn sys_read(ptr: u64, len: u64, handle: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let handle: Handle = match handle.try_into() {
+		Ok(h) => h,
+		Err(_) => return Result(-1),
+	};
+	let ptr = ptr as *mut u8;
+	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts_mut(ptr, len as usize).as_mut();
+	}
+
+	if let Some(slice) = opt_slice {
+		let running = process::running_process();
+		let mut lock = process::MAP.lock();
+		let process = lock.get_mut(&running).expect("running process not in hashmap");
+
+		let read_res = process.open_files.read(handle, slice);
+		match read_res {
+			Ok(count) => Result(count as i64),
+			Err(_) => Result(-1),
 		}
 	} else {
 		Result(-1) // Failiure

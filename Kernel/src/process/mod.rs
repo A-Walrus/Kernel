@@ -2,6 +2,7 @@ use crate::{
 	cpu::syscalls::{self, Registers},
 	fs::ext2::{Ext2Err, File},
 	mem::paging::{self, UserPageTable},
+	util::io::{Read, Seek, Write},
 };
 use alloc::{collections::VecDeque, string::String};
 use hashbrown::HashMap;
@@ -32,13 +33,20 @@ pub struct OpenFiles {
 unsafe impl Send for PCB {}
 unsafe impl Sync for PCB {}
 
-type Handle = u32;
+/// File handle
+pub type Handle = u32;
 impl OpenFiles {
 	fn new() -> Self {
 		Self {
 			handles: HashMap::new(),
 			next: 0,
 		}
+	}
+
+	/// Read from the file handle into the slice
+	pub fn read(&mut self, handle: Handle, slice: &mut [u8]) -> Result<usize, Ext2Err> {
+		let file = self.handles.get_mut(&handle).ok_or(Ext2Err::NoHandle)?;
+		Ok(file.read(slice)?)
 	}
 
 	/// Open a file, creting a handle

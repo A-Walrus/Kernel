@@ -1,3 +1,4 @@
+use crate::io::{IOError, Read};
 #[allow(unused_imports)]
 use crate::{syscall0, syscall1, syscall2, syscall3, syscall4, syscall5};
 
@@ -43,9 +44,31 @@ pub fn get_input(buffer: &mut [u8]) {
 
 type Handle = u32;
 
-pub fn read(buffer: &mut [u8], handle: Handle) {
-	unsafe {
-		syscall3(6, buffer.as_ptr() as usize, buffer.len(), handle as usize);
+pub fn read(buffer: &mut [u8], handle: Handle) -> i64 {
+	unsafe { syscall3(6, buffer.as_ptr() as usize, buffer.len(), handle as usize) }
+}
+
+pub struct File(Handle);
+
+impl File {
+	pub fn new(path: &str) -> Result<Self, ()> {
+		let a = open_file(path)?;
+		Ok(File(a))
+	}
+}
+
+impl Read for File {
+	fn read(&mut self, buf: &mut [u8]) -> Result<usize, IOError> {
+		match read(buf, self.0) {
+			count if count >= 0 => Ok(count as usize),
+			_ => Err(IOError::Other),
+		}
+	}
+}
+
+impl Drop for File {
+	fn drop(&mut self) {
+		// TODO
 	}
 }
 

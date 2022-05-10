@@ -2,9 +2,12 @@
 #![no_std]
 
 extern crate alloc;
+use alloc::{string::String, vec::Vec};
 use standard::{
-	init, print, println,
-	syscalls::{self, read_line},
+	init,
+	io::Read,
+	print, println,
+	syscalls::{self, read_line, File},
 };
 
 #[no_mangle]
@@ -20,11 +23,20 @@ pub extern "C" fn _start() {
 			}
 			Some("print") => match split.next() {
 				Some(path) => {
-					let handle = syscalls::open_file(path);
-					if let Ok(handle) = handle {
-						let mut buffer = [0; 128];
-						syscalls::read(&mut buffer, handle);
-						println!("{:?}", buffer);
+					let file = File::new(path);
+					match file {
+						Ok(mut f) => {
+							let mut buf = Vec::new();
+							f.read_to_end(&mut buf).expect("Failed to read!");
+							let res = String::from_utf8(buf);
+							match res {
+								Ok(string) => println!("{}", string),
+								Err(_) => println!("File is not UTF8"),
+							}
+						}
+						Err(_) => {
+							println!("Failed to open file")
+						}
 					}
 				}
 				None => {
@@ -32,7 +44,7 @@ pub extern "C" fn _start() {
 				}
 			},
 			Some(s) => {
-				println!("Invalid command!");
+				println!("Invalid command! {}", s);
 			}
 			None => {}
 		}

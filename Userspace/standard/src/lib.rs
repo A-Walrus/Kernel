@@ -6,6 +6,8 @@
 
 pub mod syscalls;
 
+pub mod io;
+
 extern crate alloc;
 
 macro_rules! syscall {

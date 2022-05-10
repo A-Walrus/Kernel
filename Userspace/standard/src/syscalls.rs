@@ -55,11 +55,14 @@ pub fn read_line() -> String {
 		let mut buf = [0];
 		get_input(&mut buf);
 		let char = buf[0] as char;
-		print!("{}", char);
 		if char == '\n' {
+			print!("\n");
 			break;
 		} else {
-			s.push(char);
+			if !char.is_ascii_control() {
+				print!("{}", char);
+				s.push(char);
+			}
 		}
 	}
 	s

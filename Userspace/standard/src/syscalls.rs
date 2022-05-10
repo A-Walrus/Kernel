@@ -40,6 +40,13 @@ pub fn get_input(buffer: &mut [u8]) {
 		syscall2(4, buffer.as_ptr() as usize, buffer.len());
 	}
 }
+
+pub fn open_file(path: &str) {
+	unsafe {
+		syscall2(5, path.as_ptr() as usize, path.len());
+	}
+}
+
 use alloc::string::String;
 
 pub fn read_line() -> String {

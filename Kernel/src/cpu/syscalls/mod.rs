@@ -41,7 +41,37 @@ pub enum SyscallResult {
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 5] = [sys_debug, sys_print, sys_exit, sys_exec, sys_input];
+const SYSCALLS: [Syscall; 6] = [sys_debug, sys_print, sys_exit, sys_exec, sys_input, sys_open];
+
+fn sys_open(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let ptr = ptr as *const u8;
+	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+
+	if let Some(slice) = opt_slice {
+		let a = str::from_utf8(slice);
+		if let Ok(s) = a {
+			let running = process::running_process();
+			let mut lock = process::MAP.lock();
+			let process = lock.get_mut(&running).expect("running process not in hashmap");
+			let res = process.open_files.open(s);
+			if let Ok(handle) = res {
+				Result(handle as i64)
+			} else {
+				Result(-1)
+			}
+		} else {
+			serial_println!("Invalid UTF path");
+			Result(-1)
+		}
+	} else {
+		Result(-1) // Failiure
+	}
+}
 
 fn sys_input(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *mut u8;

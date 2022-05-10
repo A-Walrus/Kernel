@@ -938,7 +938,8 @@ fn get_indirect_blocks(
 	Ok(())
 }
 
-struct File<'a> {
+/// File handle
+pub struct File<'a> {
 	inode: Inode,
 	inode_data: InodeData,
 	reader: BlockReader<'a>,
@@ -947,6 +948,12 @@ struct File<'a> {
 }
 
 impl<'a> File<'a> {
+	/// get file handle from path
+	pub fn from_path(path: &str) -> Result<Self, Ext2Err> {
+		let inode = path_to_inode(path)?;
+		File::new(inode)
+	}
+
 	fn new(inode: u32) -> Result<Self, Ext2Err> {
 		serial_println!("Opening inode: {}", inode);
 		let ext = get_ext!();

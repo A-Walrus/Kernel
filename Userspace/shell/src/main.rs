@@ -13,10 +13,21 @@ pub extern "C" fn _start() {
 	loop {
 		print!("GuyOS > ");
 		let input = read_line();
-		if input == "quit" {
-			break;
-		} else {
-			println!("ECHO: {}", input);
+		let mut split = input.split_ascii_whitespace();
+		match split.next() {
+			Some("quit") => {
+				break;
+			}
+			Some("open") => match split.next() {
+				Some(path) => syscalls::open_file(path),
+				None => {
+					println!("More args needed")
+				}
+			},
+			Some(s) => {
+				println!("Invalid command!");
+			}
+			None => {}
 		}
 	}
 	syscalls::exit(0);

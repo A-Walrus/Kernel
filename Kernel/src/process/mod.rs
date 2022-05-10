@@ -1,5 +1,6 @@
 use crate::{
 	cpu::syscalls::{self, Registers},
+	fs::ext2::File,
 	mem::paging::{self, UserPageTable},
 };
 use alloc::{collections::VecDeque, string::String};
@@ -22,7 +23,32 @@ lazy_static! {
 /// Module for working with elf executables
 pub mod elf;
 
-// type OpenFiles = ();
+/// A struct managing open files
+pub struct OpenFiles {
+	// handles: HashMap<Handle, File>,
+	handles: (),
+}
+
+type Handle = u32;
+impl OpenFiles {
+	fn new() -> Self {
+		Self { handles: () }
+	}
+
+	/// Open a file, creting a handle
+	pub fn open(&mut self, path: &str) -> Result<Handle, ()> {
+		serial_println!("path {}", path);
+		let file_res = File::from_path(path);
+		match file_res {
+			Ok(a) => {
+				serial_println!("YAY")
+			}
+			Err(_) => serial_println!("Nay"),
+		}
+
+		unimplemented!();
+	}
+}
 
 enum State {
 	New { start: VirtAddr, stack: VirtAddr },
@@ -64,8 +90,8 @@ pub struct PCB {
 	page_table: UserPageTable,
 	/// Input buffer for the process
 	pub input_buffer: String,
-	// registers: (),
-	// open_files: OpenFiles,
+	/// This processes open files
+	pub open_files: OpenFiles,
 }
 
 /// Get process in foreground
@@ -275,6 +301,7 @@ fn create_process(executable_path: &str) -> Result<PCB, elf::ElfErr> {
 		state: State::New { stack, start },
 		input_buffer: String::new(),
 		block_state: BlockState::Ready,
+		open_files: OpenFiles::new(),
 		page_table,
 	})
 }

@@ -89,14 +89,20 @@ pub fn read_line() -> String {
 		let mut buf = [0];
 		get_input(&mut buf);
 		let char = buf[0] as char;
-		if char == '\n' {
-			print!("\n");
-			break;
-		} else {
-			if !char.is_ascii_control() {
+		match char {
+			'\n' => {
+				print!("\n");
+				break;
+			}
+			'\x08' => {
+				s.pop();
+				print!("\x08");
+			}
+			char if !char.is_ascii_control() => {
 				print!("{}", char);
 				s.push(char);
 			}
+			_ => {}
 		}
 	}
 	s

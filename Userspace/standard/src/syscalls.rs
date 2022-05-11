@@ -17,17 +17,19 @@ macro_rules! print {
 
 #[macro_export]
 macro_rules! println {
-	() => (print_a("\n"));
+	() => ($crate::syscalls::print_a("\n"));
 	($fmt:expr) => ($crate::print!(concat!($fmt, "\n")));
     ($fmt:expr, $($arg:tt)*) => ($crate::print!(
         concat!($fmt, "\n"), $($arg)*))
 
 }
 
-pub fn exit(status: usize) {
+pub fn exit(status: isize) -> ! {
 	unsafe {
-		syscall1(2, status);
+		syscall1(2, status as usize);
 	}
+	// This is unreachable but makes compiler happy
+	loop {}
 }
 
 pub fn exec(path: &str) {
@@ -101,8 +103,9 @@ pub fn read_line() -> String {
 				break;
 			}
 			'\x08' => {
-				s.pop();
-				print!("\x08");
+				if s.pop().is_some() {
+					print!("\x08");
+				}
 			}
 			char if !char.is_ascii_control() => {
 				print!("{}", char);

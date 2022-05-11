@@ -54,7 +54,7 @@ syscall! {
 
 #[panic_handler]
 pub fn panic(_info: &core::panic::PanicInfo) -> ! {
-	loop {}
+	syscalls::exit(-1);
 }
 
 use linked_list_allocator::LockedHeap;

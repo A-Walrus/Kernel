@@ -220,6 +220,7 @@ fn sys_exec(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult
 // }
 
 fn sys_exit(status: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let status = status as i64;
 	serial_println!("Process exited with status: {}", status);
 	process::remove_current_process();
 

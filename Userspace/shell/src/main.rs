@@ -7,7 +7,7 @@ use standard::{
 	init,
 	io::Read,
 	print, println,
-	syscalls::{self, read_line, File},
+	syscalls::{self, exec, read_line, File},
 };
 
 #[no_mangle]
@@ -39,6 +39,12 @@ pub extern "C" fn _start() {
 						}
 					}
 				}
+				None => {
+					println!("More args needed")
+				}
+			},
+			Some("exec") => match split.next() {
+				Some(path) => exec(path),
 				None => {
 					println!("More args needed")
 				}

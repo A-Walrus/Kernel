@@ -6,4 +6,5 @@ members = [
   "shell",
   "with_alloc",
   "fibonachi",
+  "black_and_solve",
 ]

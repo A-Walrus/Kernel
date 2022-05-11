@@ -44,6 +44,12 @@ pub fn get_input(buffer: &mut [u8]) {
 
 type Handle = u32;
 
+pub fn close(handle: Handle) {
+	unsafe {
+		syscall1(7, handle as usize);
+	}
+}
+
 pub fn read(buffer: &mut [u8], handle: Handle) -> i64 {
 	unsafe { syscall3(6, buffer.as_ptr() as usize, buffer.len(), handle as usize) }
 }
@@ -68,7 +74,7 @@ impl Read for File {
 
 impl Drop for File {
 	fn drop(&mut self) {
-		// TODO
+		close(self.0)
 	}
 }
 

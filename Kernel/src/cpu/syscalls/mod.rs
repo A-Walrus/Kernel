@@ -41,7 +41,27 @@ pub enum SyscallResult {
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 7] = [sys_debug, sys_print, sys_exit, sys_exec, sys_input, sys_open, sys_read];
+const SYSCALLS: [Syscall; 8] = [
+	sys_debug, sys_print, sys_exit, sys_exec, sys_input, sys_open, sys_read, sys_close,
+];
+
+fn sys_close(handle: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let handle: Handle = match handle.try_into() {
+		Ok(h) => h,
+		Err(_) => return Result(-1),
+	};
+	serial_println!("sys_close, handle: {} ", handle);
+
+	let running = process::running_process();
+	let mut lock = process::MAP.lock();
+	let process = lock.get_mut(&running).expect("running process not in hashmap");
+	let res = process.open_files.close(handle);
+	if res.is_ok() {
+		Result(0)
+	} else {
+		Result(-1)
+	}
+}
 
 fn sys_open(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;

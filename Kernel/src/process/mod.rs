@@ -59,6 +59,16 @@ impl OpenFiles {
 		assert!(prev.is_none());
 		Ok(handle)
 	}
+
+	/// Close a handle to a file
+	pub fn close(&mut self, handle: Handle) -> Result<(), Ext2Err> {
+		// self.handles.get_mut(&handle).ok_or(Ext2Err::NoHandle)?;
+		let result = self.handles.remove(&handle);
+		match result {
+			Some(_) => Ok(()),
+			None => Err(Ext2Err::NoHandle),
+		}
+	}
 }
 
 enum State {

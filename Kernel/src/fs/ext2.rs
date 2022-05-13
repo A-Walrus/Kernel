@@ -954,7 +954,8 @@ impl File {
 		File::new(inode)
 	}
 
-	fn new(inode: u32) -> Result<Self, Ext2Err> {
+	/// Create new file handle from inode
+	pub fn new(inode: u32) -> Result<Self, Ext2Err> {
 		serial_println!("Opening inode: {}", inode);
 		let ext = get_ext!();
 		let device = get_device!();
@@ -1134,6 +1135,8 @@ pub enum Ext2Err {
 	NotAbsolute,
 	/// The specified file path was not found
 	FileNotFound,
+	/// A parent of this file was not found
+	ParentNotFound,
 	/// The file you are trying to create already exists
 	FileAlreadyExists,
 	/// Trying to do a directory operation on a file that is not a directory

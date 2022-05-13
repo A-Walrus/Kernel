@@ -1,6 +1,6 @@
 use crate::{
 	cpu::syscalls::{self, Registers},
-	fs::ext2::{Ext2Err, File},
+	fs::ext2::{add_regular_file, Ext2Err, File},
 	mem::paging::{self, UserPageTable},
 	util::io::{Read, Seek, Write},
 };
@@ -58,7 +58,14 @@ impl OpenFiles {
 	/// Open a file, creting a handle
 	pub fn open(&mut self, path: &str) -> Result<Handle, Ext2Err> {
 		serial_println!("path {}", path);
-		let file = File::from_path(path)?;
+		let file = match File::from_path(path) {
+			Ok(f) => f,
+			Err(Ext2Err::FileNotFound) => {
+				let inode = add_regular_file(path)?;
+				File::new(inode)?
+			}
+			Err(e) => return Err(e),
+		};
 		let handle = self.next;
 		self.next += 1;
 		let prev = self.handles.insert(handle, file);

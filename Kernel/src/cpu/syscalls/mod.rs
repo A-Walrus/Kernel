@@ -99,7 +99,6 @@ fn sys_write(ptr: u64, len: u64, handle: u64, _: u64, _: u64, _: u64) -> Syscall
 		Err(_) => return Result(-1),
 	};
 	let ptr = ptr as *const u8;
-	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
 	let opt_slice;
 	unsafe {
 		// This is not sound. Who knows what the user put as the pointer
@@ -127,7 +126,6 @@ fn sys_read(ptr: u64, len: u64, handle: u64, _: u64, _: u64, _: u64) -> SyscallR
 		Err(_) => return Result(-1),
 	};
 	let ptr = ptr as *mut u8;
-	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
 	let opt_slice;
 	unsafe {
 		// This is not sound. Who knows what the user put as the pointer

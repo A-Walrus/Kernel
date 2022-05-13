@@ -1,4 +1,4 @@
-use elf_rs::{self, Elf, ElfFile, ProgramType};
+use elf_rs::{self, Elf, ElfFile, Error, ProgramType};
 
 use x86_64::{
 	addr::VirtAddr,
@@ -21,6 +21,14 @@ pub enum ElfErr {
 	Fs(Ext2Err),
 	/// Only 64 bit executables are supported
 	Elf32,
+	/// Error related to the structure of the elf file
+	Elf(Error),
+}
+
+impl From<Error> for ElfErr {
+	fn from(e: Error) -> Self {
+		ElfErr::Elf(e)
+	}
 }
 
 impl From<Ext2Err> for ElfErr {
@@ -33,7 +41,7 @@ impl From<Ext2Err> for ElfErr {
 pub fn load_elf(path: &str, page_table: &mut PageTable) -> Result<(VirtAddr, VirtAddr), ElfErr> {
 	serial_println!("Loading ELF {}", path);
 	let file_data = ext2::read_file(path)?;
-	let elf = Elf::from_bytes(&file_data).expect("failed to parse elf");
+	let elf = Elf::from_bytes(&file_data)?;
 	let elf64 = match elf {
 		Elf::Elf64(elf) => elf,
 		_ => return Err(ElfErr::Elf32),

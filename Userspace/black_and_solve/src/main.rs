@@ -16,11 +16,10 @@ use core::{fmt, ops};
 use serde::{Deserialize, Serialize};
 
 #[no_mangle]
-pub extern "C" fn _start() {
-	init();
+pub extern "C" fn main() -> isize {
 	let board = Board::default();
 	board.solve();
-	syscalls::exit(0);
+	return 0;
 }
 
 const SIZE: usize = 6;

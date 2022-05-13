@@ -78,3 +78,14 @@ pub fn init() {
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 	panic!("allocation error: {:?}", layout)
 }
+
+extern "C" {
+	fn main() -> isize;
+}
+
+#[no_mangle]
+pub extern "C" fn _start() {
+	init();
+	let result = unsafe { main() };
+	syscalls::exit(result);
+}

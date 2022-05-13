@@ -11,28 +11,26 @@ use standard::{
 extern crate alloc;
 
 #[no_mangle]
-pub extern "C" fn _start() {
-	init();
-	{
-		let mut a: u64 = 0;
-		let mut b: u64 = 1;
+pub extern "C" fn main() -> isize {
+	let mut a: u64 = 0;
+	let mut b: u64 = 1;
 
-		let n = 100;
+	let n = 100;
 
-		// syscalls::print(&format!("First {} Fibonachi numbers:\n", n));
-		println!("First {} Fibonachi numbers:", n);
+	// syscalls::print(&format!("First {} Fibonachi numbers:\n", n));
+	println!("First {} Fibonachi numbers:", n);
 
-		let mut v = Vec::new();
-		for _ in 0..n {
-			v.push(a);
-			print!("{}, ", a);
-			b = a + b;
-			a = b - a;
-		}
-		let string = format!("{:?}", v);
-
-		let mut file = File::new("/test.txt").unwrap();
-		file.write(string.as_bytes()).unwrap();
+	let mut v = Vec::new();
+	for _ in 0..n {
+		v.push(a);
+		print!("{}, ", a);
+		b = a + b;
+		a = b - a;
 	}
-	syscalls::exit(0);
+	let string = format!("{:?}", v);
+
+	let mut file = File::new("/test.txt").unwrap();
+	file.write(string.as_bytes()).unwrap();
+
+	return 0;
 }

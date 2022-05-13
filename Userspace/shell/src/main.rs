@@ -11,8 +11,7 @@ use standard::{
 };
 
 #[no_mangle]
-pub extern "C" fn _start() {
-	init();
+pub extern "C" fn main() -> isize {
 	loop {
 		print!("GuyOS > ");
 		let input = read_line();
@@ -55,5 +54,5 @@ pub extern "C" fn _start() {
 			None => {}
 		}
 	}
-	syscalls::exit(0);
+	return 0;
 }

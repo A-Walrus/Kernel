@@ -1,4 +1,4 @@
-use crate::io::{IOError, Read};
+use crate::io::{IOError, Read, Write};
 #[allow(unused_imports)]
 use crate::{syscall0, syscall1, syscall2, syscall3, syscall4, syscall5};
 
@@ -56,6 +56,10 @@ pub fn read(buffer: &mut [u8], handle: Handle) -> i64 {
 	unsafe { syscall3(6, buffer.as_ptr() as usize, buffer.len(), handle as usize) }
 }
 
+pub fn write(buffer: &[u8], handle: Handle) -> i64 {
+	unsafe { syscall3(8, buffer.as_ptr() as usize, buffer.len(), handle as usize) }
+}
+
 pub struct File(Handle);
 
 impl File {
@@ -71,6 +75,19 @@ impl Read for File {
 			count if count >= 0 => Ok(count as usize),
 			_ => Err(IOError::Other),
 		}
+	}
+}
+
+impl Write for File {
+	fn write(&mut self, buf: &[u8]) -> Result<usize, IOError> {
+		match write(buf, self.0) {
+			count if count >= 0 => Ok(count as usize),
+			_ => Err(IOError::Other),
+		}
+	}
+	fn flush(&mut self) -> Result<(), IOError> {
+		// No need to flush
+		Ok(())
 	}
 }
 

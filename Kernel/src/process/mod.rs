@@ -49,6 +49,12 @@ impl OpenFiles {
 		Ok(file.read(slice)?)
 	}
 
+	/// Write from the slice to the file handle
+	pub fn write(&mut self, handle: Handle, slice: &[u8]) -> Result<usize, Ext2Err> {
+		let file = self.handles.get_mut(&handle).ok_or(Ext2Err::NoHandle)?;
+		Ok(file.write(slice)?)
+	}
+
 	/// Open a file, creting a handle
 	pub fn open(&mut self, path: &str) -> Result<Handle, Ext2Err> {
 		serial_println!("path {}", path);

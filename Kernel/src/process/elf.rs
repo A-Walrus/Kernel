@@ -1,3 +1,8 @@
+use core::{
+	mem::{align_of, size_of},
+	slice::from_raw_parts_mut,
+	str::from_utf8,
+};
 use elf_rs::{self, Elf, ElfFile, Error, ProgramType};
 
 use x86_64::{
@@ -37,8 +42,22 @@ impl From<Ext2Err> for ElfErr {
 	}
 }
 
+/// Data after loading an elf process
+#[derive(Copy, Clone)]
+pub struct LoadData {
+	/// Entrypoint
+	pub entry: VirtAddr,
+	/// Top of stack
+	pub stack_top: VirtAddr,
+	/// Number of arguements
+	pub argc: usize,
+	/// Pointer to arguemnt vector
+	pub argv: VirtAddr,
+}
+
 /// load an ELF executable
-pub fn load_elf(path: &str, page_table: &mut PageTable) -> Result<(VirtAddr, VirtAddr), ElfErr> {
+// pub fn load_elf(path: &str, page_table: &mut PageTable, args: &[&str]) -> Result<(VirtAddr, VirtAddr), ElfErr> {
+pub fn load_elf(path: &str, page_table: &mut PageTable, args: &[&str]) -> Result<LoadData, ElfErr> {
 	serial_println!("Loading ELF {}", path);
 	let file_data = ext2::read_file(path)?;
 	let elf = Elf::from_bytes(&file_data)?;
@@ -49,8 +68,8 @@ pub fn load_elf(path: &str, page_table: &mut PageTable) -> Result<(VirtAddr, Vir
 
 	let prev_table = Cr3::read();
 
+	// Switch to user table
 	unsafe {
-		serial_println!("Switching to user table");
 		paging::set_page_table(page_table);
 	}
 
@@ -87,6 +106,7 @@ pub fn load_elf(path: &str, page_table: &mut PageTable) -> Result<(VirtAddr, Vir
 		}
 	}
 
+	// Map stack
 	const STACK_SIZE: u64 = 0x800000; // 8MiB
 	const STACK_TOP: u64 = 0x0000800000000000 - 1; // top of userspace
 
@@ -98,6 +118,24 @@ pub fn load_elf(path: &str, page_table: &mut PageTable) -> Result<(VirtAddr, Vir
 
 	paging::map(range, page_table, flags);
 
+	let mut stack_top: usize = (STACK_TOP as usize) & !(align_of::<&str>() - 1);
+	serial_println!("{:#x}", stack_top);
+
+	let len = args.len();
+	let size = len * size_of::<&str>();
+	let slice: &mut [&str] = unsafe { from_raw_parts_mut((stack_top - size) as *mut &str, len) };
+	slice.copy_from_slice(args);
+	stack_top -= size;
+
+	for arg in slice.iter_mut() {
+		let len = arg.len();
+		let slice: &mut [u8] = unsafe { from_raw_parts_mut((stack_top - len) as *mut u8, len) };
+		slice.copy_from_slice(arg.as_bytes());
+		stack_top -= len;
+		*arg = from_utf8(slice).unwrap();
+	}
+
+	// Map heap
 	const HEAP_SIZE: u64 = 0x800000; // 8MiB
 	const HEAP_START: u64 = 0x0000400000000000;
 
@@ -109,10 +147,16 @@ pub fn load_elf(path: &str, page_table: &mut PageTable) -> Result<(VirtAddr, Vir
 
 	paging::map(range, page_table, flags);
 
+	// Switch back to original page table
 	unsafe {
 		Cr3::write(prev_table.0, prev_table.1);
 	}
 
 	let entry = elf64.elf_header().entry_point();
-	Ok((VirtAddr::new(entry), VirtAddr::new(STACK_TOP)))
+	Ok(LoadData {
+		entry: VirtAddr::new(entry),
+		stack_top: VirtAddr::new(stack_top as u64),
+		argc: args.len(),
+		argv: VirtAddr::from_ptr(slice.as_ptr()),
+	})
 }

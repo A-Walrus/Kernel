@@ -461,7 +461,7 @@ pub fn setup() {
 }
 
 /// Go to ring 3 with given code and stack addresses
-pub unsafe fn go_to_ring3(code: VirtAddr, stack_end: VirtAddr) {
+pub unsafe fn go_to_ring3(code: VirtAddr, stack_end: VirtAddr, arg0: usize, arg1: usize) {
 	let cs_idx: u16 = GDT.1.user_code_selector.0;
 	let ds_idx: u16 = GDT.1.user_data_selector.0;
 
@@ -474,7 +474,11 @@ pub unsafe fn go_to_ring3(code: VirtAddr, stack_end: VirtAddr) {
 	"push 0x200",
 	"push rdx",
 	"push rdi",
+	"mov rdi, {arg0}",
+	"mov rsi, {arg1}",
 	"iretq",
+	arg0 = in(reg) arg0,
+	arg1 = in(reg) arg1,
 	in("rdi") code.as_u64(),
 	in("rsi") stack_end.as_u64(),
 	in("dx") cs_idx,

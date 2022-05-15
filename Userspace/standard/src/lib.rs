@@ -84,8 +84,15 @@ extern "C" {
 }
 
 #[no_mangle]
-pub extern "C" fn _start() {
+pub extern "C" fn _start(argc: usize, argv: *const &str) {
 	init();
+	println!("argc: {}", argc);
+	println!("argv: {:?}", argv);
+	unsafe {
+		let args: &[&str] = core::slice::from_raw_parts(argv, argc);
+		println!("args: {:?}", args);
+	}
+
 	let result = unsafe { main() };
 	syscalls::exit(result);
 }

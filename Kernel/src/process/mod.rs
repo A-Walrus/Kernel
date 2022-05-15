@@ -78,7 +78,7 @@ impl OpenFiles {
 }
 
 enum State {
-	New { start: VirtAddr, stack: VirtAddr },
+	New(elf::LoadData),
 	Running { registers: Registers },
 }
 
@@ -159,9 +159,9 @@ impl PCB {
 			paging::set_page_table(&self.page_table.0);
 		}
 		match self.state {
-			State::New { start, stack } => unsafe {
+			State::New(data) => unsafe {
 				// serial_println!("Going to ring3 - start: {:?} stack: {:?}", start, stack);
-				syscalls::go_to_ring3(start, stack);
+				syscalls::go_to_ring3(data.entry, data.stack_top, data.argc, data.argv.as_u64() as usize);
 			},
 			State::Running { registers } => {
 				if let BlockState::Blocked {
@@ -323,9 +323,9 @@ fn get_new_pid() -> Pid {
 fn create_process(executable_path: &str) -> Result<PCB, elf::ElfErr> {
 	serial_println!("Creating process: {}", executable_path);
 	let mut page_table = paging::get_new_user_table();
-	let (start, stack) = elf::load_elf(executable_path, &mut page_table.0)?;
+	let data = elf::load_elf(executable_path, &mut page_table.0, &["one", "two", "three"])?;
 	Ok(PCB {
-		state: State::New { stack, start },
+		state: State::New(data),
 		input_buffer: String::new(),
 		block_state: BlockState::Ready,
 		open_files: OpenFiles::new(),

@@ -4,10 +4,9 @@
 extern crate alloc;
 use alloc::{string::String, vec::Vec};
 use standard::{
-	init,
 	io::Read,
 	print, println,
-	syscalls::{self, exec, read_line, File},
+	syscalls::{exec, read_line, File},
 };
 
 #[no_mangle]

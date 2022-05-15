@@ -1,15 +1,10 @@
 #![no_main]
 #![no_std]
 
-#[macro_use]
 extern crate alloc;
+
 use alloc::{string::String, vec::Vec};
-use standard::{
-	init,
-	io::Read,
-	print, println,
-	syscalls::{self, read_line, File},
-};
+use standard::{io::Read, print, println, syscalls::File};
 
 use core::{fmt, ops};
 

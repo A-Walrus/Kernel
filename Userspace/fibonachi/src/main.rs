@@ -2,12 +2,7 @@
 #![no_std]
 
 use alloc::{format, vec::Vec};
-use standard::{
-	init,
-	io::Write,
-	print, println,
-	syscalls::{self, File},
-};
+use standard::{io::Write, print, println, syscalls::File};
 extern crate alloc;
 
 #[no_mangle]

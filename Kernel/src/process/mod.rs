@@ -250,17 +250,17 @@ pub fn run_next_process() {
 
 /// Remvoe the currently running process
 pub fn remove_current_process() {
-	let mut lock = QUEUE.lock();
-	let pid = lock.pop_front().expect("No processes");
+	{
+		let mut lock = QUEUE.lock();
+		let pid = lock.pop_front().expect("No processes");
 
-	let prev_value = MAP.lock().remove(&pid);
-	assert!(prev_value.is_some());
+		let prev_value = MAP.lock().remove(&pid);
+		assert!(prev_value.is_some());
 
-	if lock.is_empty() {
-		crate::end();
+		if lock.is_empty() {
+			crate::end();
+		}
 	}
-
-	drop(lock);
 
 	run_next_process();
 }

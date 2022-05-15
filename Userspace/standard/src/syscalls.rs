@@ -32,9 +32,15 @@ pub fn exit(status: isize) -> ! {
 	loop {}
 }
 
-pub fn exec(path: &str) {
+pub fn exec(path: &str, args: &[&str]) {
 	unsafe {
-		syscall2(3, path.as_ptr() as usize, path.len());
+		syscall4(
+			3,
+			path.as_ptr() as usize,
+			path.len(),
+			args.as_ptr() as usize,
+			args.len(),
+		);
 	}
 }
 

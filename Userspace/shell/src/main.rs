@@ -42,7 +42,10 @@ pub extern "C" fn main() -> isize {
 				}
 			},
 			Some("exec") => match split.next() {
-				Some(path) => exec(path),
+				Some(path) => {
+					let args: Vec<&str> = split.collect();
+					exec(path, &args)
+				}
 				None => {
 					println!("More args needed")
 				}

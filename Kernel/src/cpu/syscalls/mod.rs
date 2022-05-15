@@ -1,4 +1,4 @@
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 use core::{
 	cmp::min,
 	ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
@@ -197,19 +197,39 @@ fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResul
 	}
 }
 
-fn sys_exec(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+fn sys_exec(ptr: u64, len: u64, argv: u64, argc: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
 	serial_println!("sys_exec, ptr: {:?}, len: {}", ptr, len);
-	let opt_slice;
+	let executable_opt_slice;
 	unsafe {
 		// This is not sound. Who knows what the user put as the pointer
-		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+		executable_opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
 	}
 
-	if let Some(slice) = opt_slice {
+	let argc = argc as usize;
+	let ptr = argv as *const &str;
+	let args;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		args = slice_from_raw_parts(ptr, argc).as_ref().unwrap();
+	}
+
+	if let Some(slice) = executable_opt_slice {
 		let a = str::from_utf8(slice);
 		if let Ok(s) = a {
-			let res = crate::process::add_process(s);
+			let mut owning_string = String::new();
+			let mut local_args: Vec<&str> = Vec::new();
+			for arg in args {
+				owning_string.push_str(arg);
+			}
+			let mut start = 0;
+			for arg in args {
+				let len = arg.len();
+				local_args.push(&owning_string[start..start + len]);
+				start += len;
+			}
+
+			let res = crate::process::add_process(s, &local_args);
 			match res {
 				Ok(pid) => Result(pid as u32 as i64),
 				Err(e) => {

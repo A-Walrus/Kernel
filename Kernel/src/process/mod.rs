@@ -298,8 +298,8 @@ pub fn context_switch(registers: &Registers) {
 }
 
 /// Add a new process to the queue
-pub fn add_process(executable_path: &str) -> Result<Pid, elf::ElfErr> {
-	let process = create_process(executable_path)?;
+pub fn add_process(executable_path: &str, args: &[&str]) -> Result<Pid, elf::ElfErr> {
+	let process = create_process(executable_path, args)?;
 	let new_pid = get_new_pid();
 
 	QUEUE.lock().push_back(new_pid);
@@ -320,10 +320,10 @@ fn get_new_pid() -> Pid {
 	pid
 }
 
-fn create_process(executable_path: &str) -> Result<PCB, elf::ElfErr> {
+fn create_process(executable_path: &str, args: &[&str]) -> Result<PCB, elf::ElfErr> {
 	serial_println!("Creating process: {}", executable_path);
 	let mut page_table = paging::get_new_user_table();
-	let data = elf::load_elf(executable_path, &mut page_table.0, &["one", "two", "three"])?;
+	let data = elf::load_elf(executable_path, &mut page_table.0, args)?;
 	Ok(PCB {
 		state: State::New(data),
 		input_buffer: String::new(),

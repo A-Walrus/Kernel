@@ -19,7 +19,7 @@ pub extern "C" fn main() -> isize {
 		let input = read_line();
 		let mut split = input.split_ascii_whitespace();
 		match split.next() {
-			Some("quit") => {
+			Some("exit") => {
 				break;
 			}
 			Some("print") => match split.next() {

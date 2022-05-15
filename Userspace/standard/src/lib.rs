@@ -83,15 +83,20 @@ extern "C" {
 	fn main() -> isize;
 }
 
+static mut ARGS: &[&str] = &[];
+
+pub fn get_args() -> &'static [&'static str] {
+	unsafe { ARGS }
+}
+
 #[no_mangle]
-pub extern "C" fn _start(argc: usize, argv: *const &str) {
+pub extern "C" fn _start(argc: usize, argv: *const &'static str) {
 	init();
-	println!("argc: {}", argc);
-	println!("argv: {:?}", argv);
-	unsafe {
-		let args: &[&str] = core::slice::from_raw_parts(argv, argc);
-		println!("args: {:?}", args);
-	}
+	// println!("argc: {}", argc);
+	// println!("argv: {:?}", argv);
+	let args: &[&str] = unsafe { core::slice::from_raw_parts(argv, argc) };
+	unsafe { ARGS = args };
+	// println!("args: {:?}", args);
 
 	let result = unsafe { main() };
 	syscalls::exit(result);

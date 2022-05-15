@@ -52,7 +52,7 @@ pub extern "C" fn main() -> isize {
 				if file_exists(&path) {
 					exec(&path, &args);
 				} else {
-					println!("/bin/{} does not exist", path);
+					println!("{} does not exist", path);
 				}
 			}
 			None => {}

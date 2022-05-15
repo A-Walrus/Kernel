@@ -1,5 +1,6 @@
 #![no_main]
 #![no_std]
+#![feature(str_split_whitespace_as_str)]
 
 extern crate alloc;
 use alloc::{string::String, vec::Vec};
@@ -41,12 +42,15 @@ pub extern "C" fn main() -> isize {
 					println!("More args needed")
 				}
 			},
-			Some("exec") => match split.next() {
-				Some(path) => exec(path),
-				None => {
-					println!("More args needed")
-				}
-			},
+			Some("exec") => {
+				exec(split.as_str());
+				// match split.next() {
+				// Some(path) => exec(path),
+				// None => {
+				// 	println!("More args needed")
+				// }
+				println!("hi");
+			}
 			Some(s) => {
 				println!("Invalid command! {}", s);
 			}

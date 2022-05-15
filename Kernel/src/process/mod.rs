@@ -4,11 +4,14 @@ use crate::{
 	mem::paging::{self, UserPageTable},
 	util::io::{Read, Seek, Write},
 };
-use alloc::{collections::VecDeque, string::String};
+use alloc::{
+	collections::VecDeque,
+	string::{String, ToString},
+	vec::Vec,
+};
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
-use x86_64::VirtAddr;
 
 type Pid = usize;
 
@@ -298,8 +301,8 @@ pub fn context_switch(registers: &Registers) {
 }
 
 /// Add a new process to the queue
-pub fn add_process(executable_path: &str) -> Result<Pid, elf::ElfErr> {
-	let process = create_process(executable_path)?;
+pub fn add_process(command: &str) -> Result<Pid, elf::ElfErr> {
+	let process = create_process(command)?;
 	let new_pid = get_new_pid();
 
 	QUEUE.lock().push_back(new_pid);
@@ -320,10 +323,15 @@ fn get_new_pid() -> Pid {
 	pid
 }
 
-fn create_process(executable_path: &str) -> Result<PCB, elf::ElfErr> {
+fn create_process(command: &str) -> Result<PCB, elf::ElfErr> {
+	let copy = command.to_string();
+	let split = copy.split_ascii_whitespace();
+	let args: Vec<&str> = split.collect();
+	let executable_path = args[0];
 	serial_println!("Creating process: {}", executable_path);
 	let mut page_table = paging::get_new_user_table();
-	let data = elf::load_elf(executable_path, &mut page_table.0, &["one", "two", "three"])?;
+
+	let data = elf::load_elf(executable_path, &mut page_table.0, &args)?;
 	Ok(PCB {
 		state: State::New(data),
 		input_buffer: String::new(),

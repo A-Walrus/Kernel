@@ -44,6 +44,11 @@ pub fn exec(path: &str, args: &[&str]) {
 	}
 }
 
+pub fn file_exists(path: &str) -> bool {
+	let f = File::new(path);
+	f.is_ok()
+}
+
 pub fn get_input(buffer: &mut [u8]) {
 	unsafe {
 		syscall2(4, buffer.as_ptr() as usize, buffer.len());

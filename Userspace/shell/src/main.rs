@@ -2,11 +2,14 @@
 #![no_std]
 
 extern crate alloc;
-use alloc::{string::String, vec::Vec};
+use alloc::{
+	string::{String, ToString},
+	vec::Vec,
+};
 use standard::{
 	io::Read,
 	print, println,
-	syscalls::{exec, read_line, File},
+	syscalls::{exec, file_exists, read_line, File},
 };
 
 #[no_mangle]
@@ -41,17 +44,16 @@ pub extern "C" fn main() -> isize {
 					println!("More args needed")
 				}
 			},
-			Some("exec") => match split.next() {
-				Some(path) => {
-					let args: Vec<&str> = split.collect();
-					exec(path, &args)
+
+			Some(exec_path) => {
+				let args: Vec<&str> = split.collect();
+				let mut path = "/bin/".to_string();
+				path.push_str(exec_path);
+				if file_exists(&path) {
+					exec(&path, &args);
+				} else {
+					println!("/bin/{} does not exist", path);
 				}
-				None => {
-					println!("More args needed")
-				}
-			},
-			Some(s) => {
-				println!("Invalid command! {}", s);
 			}
 			None => {}
 		}

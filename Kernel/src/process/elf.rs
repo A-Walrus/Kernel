@@ -119,7 +119,6 @@ pub fn load_elf(path: &str, page_table: &mut PageTable, args: &[&str]) -> Result
 	paging::map(range, page_table, flags);
 
 	let mut stack_top: usize = (STACK_TOP as usize) & !(align_of::<&str>() - 1);
-	serial_println!("{:#x}", stack_top);
 
 	let len = args.len();
 	let size = len * size_of::<&str>();

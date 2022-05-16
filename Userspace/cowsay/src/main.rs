@@ -1,8 +1,7 @@
 #![no_main]
 #![no_std]
 
-use alloc::{format, vec::Vec};
-use standard::{get_args, io::Write, print, println, syscalls::File};
+use standard::{get_args, println};
 extern crate alloc;
 
 #[no_mangle]

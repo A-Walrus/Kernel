@@ -53,7 +53,8 @@ syscall! {
 }
 
 #[panic_handler]
-pub fn panic(_info: &core::panic::PanicInfo) -> ! {
+pub fn panic(info: &core::panic::PanicInfo) -> ! {
+	println!("{}", info);
 	syscalls::exit(-1);
 }
 

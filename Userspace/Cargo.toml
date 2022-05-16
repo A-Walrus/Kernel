@@ -7,4 +7,6 @@ members = [
   "fibonachi",
   "black_and_solve",
   "cowsay",
+  "cat",
+  "echo",
 ]

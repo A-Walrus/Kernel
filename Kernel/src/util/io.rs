@@ -13,6 +13,8 @@ pub enum IOError {
 	Other,
 	/// No data to flush
 	NoData,
+	/// Buffer is not big enough
+	BufferTooSmall,
 }
 
 /// Trait allowing reading from a stream

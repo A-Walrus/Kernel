@@ -231,11 +231,19 @@ fn undo_log_minus_10(num: u32) -> usize {
 
 /// Abstract custom struct representing an easy to work with directory
 #[derive(Debug)]
-struct Directory {
-	entries: Vec<Entry>,
+/// A directory
+pub struct Directory {
+	/// Vec of entries in directory
+	pub entries: Vec<Entry>,
 }
 
 impl Directory {
+	/// Get directory from path
+	pub fn from_path(path: &str) -> Result<Directory, Ext2Err> {
+		let mut file = File::from_path(path, OpenFlags::empty())?;
+		Directory::read(&mut file)
+	}
+
 	fn read(reader: &mut File) -> Result<Self, Ext2Err> {
 		if reader.inode_data.type_and_permissions.inode_type() != Type::Directory {
 			return Err(NotADir);
@@ -313,11 +321,21 @@ impl Directory {
 	}
 }
 
+// impl IntoIterator for Directory {
+// type Item = Entry;
+// type IntoIter = alloc::vec::IntoIter<Entry>;
+// fn into_iter(self) -> <Self as IntoIterator>::IntoIter {
+// self.entries.into_iter()
+// }
+// }
+
 /// Struct representing an entry in an abstract directory
 #[derive(Clone, Debug)]
-struct Entry {
+pub struct Entry {
+	/// Entry data
 	entry: DirectoryEntry,
-	name: String,
+	/// Entry name
+	pub name: String,
 }
 
 impl Entry {
@@ -1150,14 +1168,18 @@ pub enum Ext2Err {
 	FileAlreadyExists,
 	/// Trying to do a directory operation on a file that is not a directory
 	NotADir,
+	/// Trying to do a file operation on a file that is not a regular file
+	NotAFile,
 	/// Trying to do an operation that only works on empty directories on a non empty one
 	DirNotEmpty,
 	/// No parent dir. All directories should have a parent (..)
 	NoParentDir,
 	/// Ext2 signature is invalid
 	InvalidSignature,
-	/// handle doesn't exist
+	/// Handle doesn't exist
 	NoHandle,
+	/// No more entries in this directory
+	EndOfDir,
 }
 
 impl From<IOError> for Ext2Err {

@@ -6,6 +6,7 @@ use core::{
 };
 
 use crate::{cpu::gdt::GDT, print, process, process::Handle, serial_print, serial_println};
+use bitflags::bitflags;
 use x86_64::{
 	instructions::segmentation::DS,
 	registers::{model_specific::*, rflags::RFlags},
@@ -63,7 +64,17 @@ fn sys_close(handle: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResu
 	}
 }
 
-fn sys_open(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+bitflags! {
+	/// Flags for opening a file
+	pub struct OpenFlags: u64 {
+		/// Crate the file if it doesn't exist
+		const CREATE = 0b0001;
+		/// Truncate file
+		const TRUNCATE = 0b0010;
+	}
+}
+
+fn sys_open(ptr: u64, len: u64, flags: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
 	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
 	let opt_slice;
@@ -71,14 +82,18 @@ fn sys_open(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult
 		// This is not sound. Who knows what the user put as the pointer
 		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
 	}
+	let flags = match OpenFlags::from_bits(flags) {
+		Some(f) => f,
+		None => return Result(-1),
+	};
 
 	if let Some(slice) = opt_slice {
 		let a = str::from_utf8(slice);
-		if let Ok(s) = a {
+		if let Ok(path) = a {
 			let running = process::running_process();
 			let mut lock = process::MAP.lock();
 			let process = lock.get_mut(&running).expect("running process not in hashmap");
-			let res = process.open_files.open(s);
+			let res = process.open_files.open(path, flags);
 			if let Ok(handle) = res {
 				Result(handle as i64)
 			} else {

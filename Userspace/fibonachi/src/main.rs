@@ -32,7 +32,7 @@ pub extern "C" fn main() -> isize {
 	}
 	let string = format!("{:?}", v);
 
-	let mut file = File::new("/test.txt").unwrap();
+	let mut file = File::create("/fib.txt").unwrap();
 	file.write(string.as_bytes()).unwrap();
 
 	return 0;

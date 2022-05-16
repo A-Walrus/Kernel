@@ -1,6 +1,7 @@
 use crate::io::{IOError, Read, Write};
 #[allow(unused_imports)]
 use crate::{syscall0, syscall1, syscall2, syscall3, syscall4, syscall5};
+use bitflags::bitflags;
 
 pub fn print_a(s: &str) {
 	unsafe {
@@ -45,7 +46,7 @@ pub fn exec(path: &str, args: &[&str]) {
 }
 
 pub fn file_exists(path: &str) -> bool {
-	let f = File::new(path);
+	let f = File::open(path);
 	f.is_ok()
 }
 
@@ -74,8 +75,13 @@ pub fn write(buffer: &[u8], handle: Handle) -> i64 {
 pub struct File(Handle);
 
 impl File {
-	pub fn new(path: &str) -> Result<Self, ()> {
-		let a = open_file(path)?;
+	pub fn create(path: &str) -> Result<Self, ()> {
+		let a = open_file(path, OpenFlags::CREATE)?;
+		Ok(File(a))
+	}
+
+	pub fn open(path: &str) -> Result<Self, ()> {
+		let a = open_file(path, OpenFlags::empty())?;
 		Ok(File(a))
 	}
 }
@@ -108,8 +114,18 @@ impl Drop for File {
 	}
 }
 
-pub fn open_file(path: &str) -> Result<Handle, ()> {
-	let handle = unsafe { syscall2(5, path.as_ptr() as usize, path.len()) };
+bitflags! {
+	/// Flags for opening a file
+	pub struct OpenFlags: u64 {
+		/// Crate the file if it doesn't exist
+		const CREATE = 0b0001;
+		/// Truncate file
+		const TRUNCATE = 0b0010;
+	}
+}
+
+pub fn open_file(path: &str, flags: OpenFlags) -> Result<Handle, ()> {
+	let handle = unsafe { syscall3(5, path.as_ptr() as usize, path.len(), flags.bits() as usize) };
 	if handle >= 0 {
 		Ok(handle as Handle)
 	} else {

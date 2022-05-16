@@ -1,5 +1,5 @@
 use crate::{
-	cpu::syscalls::{self, Registers},
+	cpu::syscalls::{self, OpenFlags, Registers},
 	fs::ext2::{Ext2Err, File},
 	mem::paging::{self, UserPageTable},
 	util::io::{Read, Seek, Write},
@@ -55,9 +55,9 @@ impl OpenFiles {
 	}
 
 	/// Open a file, creting a handle
-	pub fn open(&mut self, path: &str) -> Result<Handle, Ext2Err> {
+	pub fn open(&mut self, path: &str, flags: OpenFlags) -> Result<Handle, Ext2Err> {
 		serial_println!("path {}", path);
-		let file = File::from_path(path)?;
+		let file = File::from_path(path, flags)?;
 		let handle = self.next;
 		self.next += 1;
 		let prev = self.handles.insert(handle, file);

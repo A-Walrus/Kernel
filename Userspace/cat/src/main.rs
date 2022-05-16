@@ -10,7 +10,7 @@ pub extern "C" fn main() -> isize {
 	let args = get_args();
 
 	for path in args {
-		let file = File::new(path);
+		let file = File::open(path);
 		match file {
 			Ok(mut f) => {
 				let mut buf = Vec::new();

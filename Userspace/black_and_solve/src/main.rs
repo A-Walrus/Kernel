@@ -160,7 +160,7 @@ fn summarize(options: &Options) -> Line {
 
 impl Default for Board {
 	fn default() -> Self {
-		let mut file = File::new("/puzzle6by6.json").unwrap();
+		let mut file = File::open("/puzzle6by6.json").unwrap();
 		let mut buf = Vec::new();
 
 		file.read_to_end(&mut buf).expect("Failed to read!");

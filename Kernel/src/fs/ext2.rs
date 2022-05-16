@@ -1,5 +1,6 @@
 use super::partitions;
 use crate::{
+	cpu::syscalls::OpenFlags,
 	drivers::ahci::disk::{BlockReader, Partition},
 	util::io::*,
 };
@@ -949,9 +950,20 @@ pub struct File {
 
 impl File {
 	/// get file handle from path
-	pub fn from_path(path: &str) -> Result<Self, Ext2Err> {
-		let inode = path_to_inode(path)?;
-		File::new(inode)
+	pub fn from_path(path: &str, flags: OpenFlags) -> Result<Self, Ext2Err> {
+		let inode = path_to_inode(path);
+		match inode {
+			Ok(inode) => File::new(inode),
+			Err(FileNotFound) => {
+				if flags.contains(OpenFlags::CREATE) {
+					let new_inode = add_regular_file(path)?;
+					File::new(new_inode)
+				} else {
+					Err(FileNotFound)
+				}
+			}
+			Err(e) => Err(e),
+		}
 	}
 
 	fn new(inode: u32) -> Result<Self, Ext2Err> {

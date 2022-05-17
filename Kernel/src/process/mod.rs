@@ -1,10 +1,14 @@
 use crate::{
 	cpu::syscalls::{self, OpenFlags, Registers},
-	fs::ext2::{Ext2Err, File},
+	fs::ext2::{Directory, Entry, Ext2Err, File},
 	mem::paging::{self, UserPageTable},
-	util::io::{Read, Seek, Write},
+	util::io::{IOError, Read, Seek, Write},
 };
-use alloc::{collections::VecDeque, string::String};
+use alloc::{
+	collections::VecDeque,
+	string::String,
+	vec::{IntoIter, Vec},
+};
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -23,9 +27,14 @@ lazy_static! {
 /// Module for working with elf executables
 pub mod elf;
 
+enum BackHandle {
+	File(File),
+	Dir(IntoIter<Entry>),
+}
+
 /// A struct managing open files
 pub struct OpenFiles {
-	handles: HashMap<Handle, File>,
+	handles: HashMap<Handle, BackHandle>,
 	next: Handle, // handles: (),
 }
 
@@ -44,23 +53,58 @@ impl OpenFiles {
 
 	/// Read from the file handle into the slice
 	pub fn read(&mut self, handle: Handle, slice: &mut [u8]) -> Result<usize, Ext2Err> {
-		let file = self.handles.get_mut(&handle).ok_or(Ext2Err::NoHandle)?;
-		Ok(file.read(slice)?)
+		let back_handle = self.handles.get_mut(&handle).ok_or(Ext2Err::NoHandle)?;
+		match back_handle {
+			BackHandle::File(file) => Ok(file.read(slice)?),
+			BackHandle::Dir(dir) => {
+				// if dir.is_empty() {
+				// 	return Err(Ext2Err::EndOfDir);
+				// }
+				match dir.as_slice().first() {
+					Some(entry) => {
+						let name = &entry.name;
+						let len = name.len();
+						if len > slice.len() {
+							return Err(Ext2Err::IO(IOError::BufferTooSmall));
+						}
+						serial_println!("{}", name);
+						slice[..len].copy_from_slice(name.as_bytes());
+						dir.next();
+						Ok(len)
+					}
+					None => Err(Ext2Err::EndOfDir),
+				}
+			}
+		}
 	}
 
 	/// Write from the slice to the file handle
 	pub fn write(&mut self, handle: Handle, slice: &[u8]) -> Result<usize, Ext2Err> {
-		let file = self.handles.get_mut(&handle).ok_or(Ext2Err::NoHandle)?;
-		Ok(file.write(slice)?)
+		let back_handle = self.handles.get_mut(&handle).ok_or(Ext2Err::NoHandle)?;
+		match back_handle {
+			BackHandle::File(file) => Ok(file.write(slice)?),
+			BackHandle::Dir(_) => Err(Ext2Err::NotAFile),
+		}
 	}
 
 	/// Open a file, creting a handle
-	pub fn open(&mut self, path: &str, flags: OpenFlags) -> Result<Handle, Ext2Err> {
-		serial_println!("path {}", path);
+	pub fn open_file(&mut self, path: &str, flags: OpenFlags) -> Result<Handle, Ext2Err> {
 		let file = File::from_path(path, flags)?;
 		let handle = self.next;
 		self.next += 1;
-		let prev = self.handles.insert(handle, file);
+		let prev = self.handles.insert(handle, BackHandle::File(file));
+		assert!(prev.is_none());
+		Ok(handle)
+	}
+
+	/// Open a directory, creting a handle
+	pub fn open_dir(&mut self, path: &str) -> Result<Handle, Ext2Err> {
+		let directory = Directory::from_path(path)?;
+		let handle = self.next;
+		self.next += 1;
+		let prev = self
+			.handles
+			.insert(handle, BackHandle::Dir(directory.entries.into_iter()));
 		assert!(prev.is_none());
 		Ok(handle)
 	}

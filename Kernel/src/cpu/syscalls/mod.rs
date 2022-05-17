@@ -42,8 +42,17 @@ pub enum SyscallResult {
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 9] = [
-	sys_debug, sys_print, sys_exit, sys_exec, sys_input, sys_open, sys_read, sys_close, sys_write,
+const SYSCALLS: [Syscall; 10] = [
+	sys_debug,
+	sys_print,
+	sys_exit,
+	sys_exec,
+	sys_input,
+	sys_open,
+	sys_read,
+	sys_close,
+	sys_write,
+	sys_open_dir,
 ];
 
 fn sys_close(handle: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
@@ -74,6 +83,35 @@ bitflags! {
 	}
 }
 
+fn sys_open_dir(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let ptr = ptr as *const u8;
+	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+
+	if let Some(slice) = opt_slice {
+		let a = str::from_utf8(slice);
+		if let Ok(path) = a {
+			let running = process::running_process();
+			let mut lock = process::MAP.lock();
+			let process = lock.get_mut(&running).expect("running process not in hashmap");
+			let res = process.open_files.open_dir(path);
+			if let Ok(handle) = res {
+				Result(handle as i64)
+			} else {
+				Result(-1)
+			}
+		} else {
+			serial_println!("Invalid UTF path");
+			Result(-1)
+		}
+	} else {
+		Result(-1) // Failiure
+	}
+}
 fn sys_open(ptr: u64, len: u64, flags: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
 	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
@@ -93,7 +131,7 @@ fn sys_open(ptr: u64, len: u64, flags: u64, _: u64, _: u64, _: u64) -> SyscallRe
 			let running = process::running_process();
 			let mut lock = process::MAP.lock();
 			let process = lock.get_mut(&running).expect("running process not in hashmap");
-			let res = process.open_files.open(path, flags);
+			let res = process.open_files.open_file(path, flags);
 			if let Ok(handle) = res {
 				Result(handle as i64)
 			} else {

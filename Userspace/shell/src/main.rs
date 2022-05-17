@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::{string::ToString, vec::Vec};
 use standard::{
 	print, println,
-	syscalls::{exec, file_exists, read_line},
+	syscalls::{exec, file_exists, read_line, wait},
 };
 
 #[no_mangle]
@@ -23,7 +23,11 @@ pub extern "C" fn main() -> isize {
 				let mut path = "/bin/".to_string();
 				path.push_str(exec_path);
 				if file_exists(&path) {
-					exec(&path, &args);
+					let pid = exec(&path, &args);
+					match pid {
+						Ok(pid) => wait(pid),
+						_ => {}
+					}
 				} else {
 					println!("{} does not exist", path);
 				}

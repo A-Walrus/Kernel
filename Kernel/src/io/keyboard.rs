@@ -53,9 +53,9 @@ fn parse_scan_code(scancode: u8) {
 					// let fg_pid = process::foreground_process();
 					// process::MAP
 					// .lock()
-					// .get_mut(&fg_pid)
-					// .expect("foreground process not in hashmap")
-					// .append_input(character);
+					// 	.get_mut(&fg_pid)
+					// 	.expect("foreground process not in hashmap")
+					// 	.append_input(character);
 				}
 				DecodedKey::RawKey(key) => serial_println!("{:?}", key),
 			}

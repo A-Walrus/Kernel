@@ -13,7 +13,8 @@ use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
 
-type Pid = usize;
+/// An identifier for a process. This is unique per process
+pub type Pid = usize;
 
 lazy_static! {
 	static ref QUEUE: Mutex<VecDeque<Pid>> = Mutex::new(VecDeque::new());
@@ -132,6 +133,8 @@ pub enum BlockData {
 		/// slice to write to
 		slice: *mut [u8],
 	},
+	/// Waiting for aprocess to finish
+	Wait(Pid),
 }
 
 unsafe impl Sync for BlockData {}
@@ -189,7 +192,10 @@ impl PCB {
 	pub fn append_input(&mut self, character: char) {
 		self.input_buffer.push(character);
 		match &mut self.block_state {
-			BlockState::Blocked { still, data: _ } => {
+			BlockState::Blocked {
+				still,
+				data: BlockData::Input { slice: _ },
+			} => {
 				*still = false;
 			}
 			_ => {}

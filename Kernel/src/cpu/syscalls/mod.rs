@@ -5,7 +5,12 @@ use core::{
 	str,
 };
 
-use crate::{cpu::gdt::GDT, print, process, process::Handle, serial_print, serial_println};
+use crate::{
+	cpu::gdt::GDT,
+	print, process,
+	process::{Handle, Pid},
+	serial_print, serial_println,
+};
 use bitflags::bitflags;
 use x86_64::{
 	instructions::segmentation::DS,
@@ -42,7 +47,7 @@ pub enum SyscallResult {
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 10] = [
+const SYSCALLS: [Syscall; 11] = [
 	sys_debug,
 	sys_print,
 	sys_exit,
@@ -53,8 +58,14 @@ const SYSCALLS: [Syscall; 10] = [
 	sys_close,
 	sys_write,
 	sys_open_dir,
+	sys_wait,
 ];
 
+/// Block the process until the process with pid exits
+fn sys_wait(pid: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let pid = pid as Pid;
+	Blocked(BlockData::Wait(pid))
+}
 fn sys_close(handle: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let handle: Handle = match handle.try_into() {
 		Ok(h) => h,
@@ -444,7 +455,10 @@ extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
 			crate::process::context_switch(registers);
 		}
 		None => {
-			unimplemented!("INVALID SYSCALL");
+			// No syscall with that id
+			let scratch = &mut registers.scratch;
+			scratch.rax = -1;
+			crate::process::context_switch(registers);
 		}
 	}
 }

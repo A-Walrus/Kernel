@@ -3,24 +3,54 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
 pub fn set_irq_handlers(idt: &mut InterruptDescriptorTable) {
 	unsafe {
-		idt[(PIC_1_OFFSET + 0) as usize].set_handler_fn(irq_handler_0);
+		idt[(PIC_1_OFFSET + 0) as usize]
+			.set_handler_fn(irq_handler_0)
+			.set_stack_index(0);
 		idt[(PIC_1_OFFSET + 1) as usize]
 			.set_handler_fn(irq_handler_1)
 			.set_stack_index(0);
-		idt[(PIC_1_OFFSET + 2) as usize].set_handler_fn(irq_handler_2);
-		idt[(PIC_1_OFFSET + 3) as usize].set_handler_fn(irq_handler_3);
-		idt[(PIC_1_OFFSET + 4) as usize].set_handler_fn(irq_handler_4);
-		idt[(PIC_1_OFFSET + 5) as usize].set_handler_fn(irq_handler_5);
-		idt[(PIC_1_OFFSET + 6) as usize].set_handler_fn(irq_handler_6);
-		idt[(PIC_1_OFFSET + 7) as usize].set_handler_fn(irq_handler_7);
-		idt[(PIC_1_OFFSET + 8) as usize].set_handler_fn(irq_handler_8);
-		idt[(PIC_1_OFFSET + 9) as usize].set_handler_fn(irq_handler_9);
-		idt[(PIC_1_OFFSET + 10) as usize].set_handler_fn(irq_handler_10);
-		idt[(PIC_1_OFFSET + 11) as usize].set_handler_fn(irq_handler_11);
-		idt[(PIC_1_OFFSET + 12) as usize].set_handler_fn(irq_handler_12);
-		idt[(PIC_1_OFFSET + 13) as usize].set_handler_fn(irq_handler_13);
-		idt[(PIC_1_OFFSET + 14) as usize].set_handler_fn(irq_handler_14);
-		idt[(PIC_1_OFFSET + 15) as usize].set_handler_fn(irq_handler_15);
+		idt[(PIC_1_OFFSET + 2) as usize]
+			.set_handler_fn(irq_handler_2)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 3) as usize]
+			.set_handler_fn(irq_handler_3)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 4) as usize]
+			.set_handler_fn(irq_handler_4)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 5) as usize]
+			.set_handler_fn(irq_handler_5)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 6) as usize]
+			.set_handler_fn(irq_handler_6)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 7) as usize]
+			.set_handler_fn(irq_handler_7)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 8) as usize]
+			.set_handler_fn(irq_handler_8)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 9) as usize]
+			.set_handler_fn(irq_handler_9)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 10) as usize]
+			.set_handler_fn(irq_handler_10)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 11) as usize]
+			.set_handler_fn(irq_handler_11)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 12) as usize]
+			.set_handler_fn(irq_handler_12)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 13) as usize]
+			.set_handler_fn(irq_handler_13)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 14) as usize]
+			.set_handler_fn(irq_handler_14)
+			.set_stack_index(0);
+		idt[(PIC_1_OFFSET + 15) as usize]
+			.set_handler_fn(irq_handler_15)
+			.set_stack_index(0);
 	}
 }
 

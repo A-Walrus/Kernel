@@ -86,6 +86,9 @@ impl UBuffer {
 	}
 }
 
+unsafe impl Send for UBuffer {}
+unsafe impl Sync for UBuffer {}
+
 impl Drop for UBuffer {
 	fn drop(&mut self) {
 		unsafe {

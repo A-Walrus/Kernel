@@ -7,11 +7,10 @@ extern crate alloc;
 use bootloader::{entry_point, BootInfo};
 use kernel::{
 	cpu::{gdt, interrupts, syscalls},
-	elf::test,
 	fs::ext2,
-	io::buffer,
+	io::{buffer, keyboard},
 	mem::{buddy, heap, paging},
-	serial_println,
+	process, serial_println,
 };
 
 entry_point!(kernel_main);
@@ -25,6 +24,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		heap::setup(buffer::calc_real_length(framebuffer));
 		interrupts::setup();
 		syscalls::setup();
+		keyboard::setup();
 		let screen = buffer::Screen::new_from_framebuffer(framebuffer);
 		let term = buffer::Terminal::new(screen);
 		unsafe {
@@ -33,11 +33,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		ext2::setup().expect("Failed to setup EXT2");
 		serial_println!("Finished setup");
 
-		test();
+		process::add_process("/bin/shell", &[]).expect("Failed to add process");
+		// process::add_process("/bin/b").expect("Failed to add process");
 
-		// ext2::cleanup().expect("Failed to cleanup EXT2");
-		serial_println!("Finished cleanup");
+		process::run_next_process();
 	}
-	serial_println!("The end");
-	loop {}
+	loop {} // to make the compiler happy
 }

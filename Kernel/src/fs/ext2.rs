@@ -1,5 +1,6 @@
 use super::partitions;
 use crate::{
+	cpu::syscalls::OpenFlags,
 	drivers::ahci::disk::{BlockReader, Partition},
 	util::io::*,
 };
@@ -231,11 +232,19 @@ fn undo_log_minus_10(num: u32) -> usize {
 
 /// Abstract custom struct representing an easy to work with directory
 #[derive(Debug)]
-struct Directory {
-	entries: Vec<Entry>,
+/// A directory
+pub struct Directory {
+	/// Vec of entries in directory
+	pub entries: Vec<Entry>,
 }
 
 impl Directory {
+	/// Get directory from path
+	pub fn from_path(path: &str) -> Result<Directory, Ext2Err> {
+		let mut file = File::from_path(path, OpenFlags::empty())?;
+		Directory::read(&mut file)
+	}
+
 	fn read(reader: &mut File) -> Result<Self, Ext2Err> {
 		if reader.inode_data.type_and_permissions.inode_type() != Type::Directory {
 			return Err(NotADir);
@@ -313,11 +322,21 @@ impl Directory {
 	}
 }
 
+// impl IntoIterator for Directory {
+// type Item = Entry;
+// type IntoIter = alloc::vec::IntoIter<Entry>;
+// fn into_iter(self) -> <Self as IntoIterator>::IntoIter {
+// self.entries.into_iter()
+// }
+// }
+
 /// Struct representing an entry in an abstract directory
 #[derive(Clone, Debug)]
-struct Entry {
+pub struct Entry {
+	/// Entry data
 	entry: DirectoryEntry,
-	name: String,
+	/// Entry name
+	pub name: String,
 }
 
 impl Entry {
@@ -895,7 +914,7 @@ fn get_inode_blocks(inode: InodeData, b_reader: &mut BlockReader, with_parents: 
 	Ok(blocks)
 }
 
-fn get_sub_blocks<'a>(b_reader: &mut BlockReader<'a>, block: Block) -> Result<&'a mut [Block], IOError> {
+fn get_sub_blocks(b_reader: &mut BlockReader, block: Block) -> Result<&'static mut [Block], IOError> {
 	let slice = b_reader.read_block(block)?;
 
 	unsafe {
@@ -939,15 +958,33 @@ fn get_indirect_blocks(
 	Ok(())
 }
 
-struct File<'a> {
+/// File handle
+pub struct File {
 	inode: Inode,
 	inode_data: InodeData,
-	reader: BlockReader<'a>,
+	reader: BlockReader,
 	position: usize,
 	blocks: Vec<Block>,
 }
 
-impl<'a> File<'a> {
+impl File {
+	/// get file handle from path
+	pub fn from_path(path: &str, flags: OpenFlags) -> Result<Self, Ext2Err> {
+		let inode = path_to_inode(path);
+		match inode {
+			Ok(inode) => File::new(inode),
+			Err(FileNotFound) => {
+				if flags.contains(OpenFlags::CREATE) {
+					let new_inode = add_regular_file(path)?;
+					File::new(new_inode)
+				} else {
+					Err(FileNotFound)
+				}
+			}
+			Err(e) => Err(e),
+		}
+	}
+
 	fn new(inode: u32) -> Result<Self, Ext2Err> {
 		serial_println!("Opening inode: {}", inode);
 		let ext = get_ext!();
@@ -966,7 +1003,7 @@ impl<'a> File<'a> {
 		})
 	}
 }
-impl<'a> Read for File<'a> {
+impl Read for File {
 	fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, IOError> {
 		let to_read = min(buf.len(), self.inode_data.size_lower as usize - self.position);
 		let mut left_to_read = to_read;
@@ -987,7 +1024,7 @@ impl<'a> Read for File<'a> {
 	}
 }
 
-impl<'a> Seek for File<'a> {
+impl Seek for File {
 	fn seek(&mut self, pos: SeekFrom) -> Result<usize, IOError> {
 		match pos {
 			SeekFrom::Start(offset) => {
@@ -1007,7 +1044,7 @@ impl<'a> Seek for File<'a> {
 	}
 }
 
-impl<'a> Write for File<'a> {
+impl Write for File {
 	fn write(&mut self, mut buf: &[u8]) -> Result<usize, IOError> {
 		let old_block_count = self.blocks.len();
 
@@ -1213,7 +1250,7 @@ fn next_tier_blocks(count: usize, tier: usize, bpb: usize) -> usize {
 	}
 }
 
-impl<'a> Drop for File<'a> {
+impl Drop for File {
 	fn drop(&mut self) {
 		let ext = get_ext!();
 		*ext.lock().get_inode_data_mut(self.inode) = self.inode_data;
@@ -1275,12 +1312,18 @@ pub enum Ext2Err {
 	FileAlreadyExists,
 	/// Trying to do a directory operation on a file that is not a directory
 	NotADir,
+	/// Trying to do a file operation on a file that is not a regular file
+	NotAFile,
 	/// Trying to do an operation that only works on empty directories on a non empty one
 	DirNotEmpty,
 	/// No parent dir. All directories should have a parent (..)
 	NoParentDir,
 	/// Ext2 signature is invalid
 	InvalidSignature,
+	/// Handle doesn't exist
+	NoHandle,
+	/// No more entries in this directory
+	EndOfDir,
 }
 
 impl From<IOError> for Ext2Err {

@@ -10,23 +10,23 @@ use super::{Port, Sector, SECTOR_SIZE};
 
 /// A struct that can browse and read sectors, with a similair interface to std::io
 #[derive(Clone)]
-pub struct BlockReader<'a> {
+pub struct BlockReader {
 	offset: usize,
 	block: usize,
 	sectors_per_block: usize,
 	buffer: UBuffer,
 	block_in_buffer: Option<usize>,
-	block_device: &'a Mutex<dyn BlockDevice>,
+	block_device: &'static Mutex<dyn BlockDevice>,
 }
 
-impl<'a> BlockReader<'a> {
+impl BlockReader {
 	/// Create a new SectorReador at a certain sector, and offset, on a given block device (through
 	/// Mutex for safety)
 	pub fn new(
 		block: usize,
 		sectors_per_block: usize,
 		offset: usize,
-		block_device: &'a Mutex<dyn BlockDevice>,
+		block_device: &'static Mutex<dyn BlockDevice>,
 	) -> Self {
 		Self {
 			offset,
@@ -116,7 +116,7 @@ impl<'a> BlockReader<'a> {
 	// }
 }
 
-impl<'a> Seek for BlockReader<'a> {
+impl Seek for BlockReader {
 	fn seek(&mut self, pos: SeekFrom) -> Result<usize, IOError> {
 		self.flush()?;
 		match pos {
@@ -140,7 +140,7 @@ impl<'a> Seek for BlockReader<'a> {
 	}
 }
 
-impl<'a> Read for BlockReader<'a> {
+impl Read for BlockReader {
 	/// Fill the buffer with bytes red from the current location
 	fn read(&mut self, mut buffer: &mut [u8]) -> Result<usize, IOError> {
 		let original_length = buffer.len();
@@ -167,7 +167,7 @@ impl<'a> Read for BlockReader<'a> {
 	}
 }
 
-impl<'a> Write for BlockReader<'a> {
+impl Write for BlockReader {
 	fn write(&mut self, mut buffer: &[u8]) -> Result<usize, IOError> {
 		let original_length = buffer.len();
 		while buffer.len() > 0 {
@@ -207,7 +207,7 @@ impl<'a> Write for BlockReader<'a> {
 	}
 }
 
-impl<'a> Drop for BlockReader<'a> {
+impl Drop for BlockReader {
 	fn drop(&mut self) {
 		self.flush().expect("Failed to flush on BlockReader Drop");
 	}

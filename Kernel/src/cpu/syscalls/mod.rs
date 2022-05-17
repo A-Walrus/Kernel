@@ -1,4 +1,12 @@
-use crate::{cpu::gdt::GDT, serial_print, serial_println};
+use alloc::{string::String, vec::Vec};
+use core::{
+	cmp::min,
+	ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
+	str,
+};
+
+use crate::{cpu::gdt::GDT, print, process, process::Handle, serial_print, serial_println};
+use bitflags::bitflags;
 use x86_64::{
 	instructions::segmentation::DS,
 	registers::{model_specific::*, rflags::RFlags},
@@ -21,14 +29,305 @@ use x86_64::{
 // R11 saved rflags
 // RDI arg
 
-#[repr(transparent)]
+use process::BlockData;
+use SyscallResult::*;
 /// Result of a syscall
-pub struct SyscallResult(u64);
+pub enum SyscallResult {
+	/// The syscall has finished and this is the result
+	Result(i64),
+	/// The syscall has not finished and must be blocked
+	Blocked(BlockData),
+}
 
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 1] = [sys_debug];
+const SYSCALLS: [Syscall; 10] = [
+	sys_debug,
+	sys_print,
+	sys_exit,
+	sys_exec,
+	sys_input,
+	sys_open,
+	sys_read,
+	sys_close,
+	sys_write,
+	sys_open_dir,
+];
+
+fn sys_close(handle: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let handle: Handle = match handle.try_into() {
+		Ok(h) => h,
+		Err(_) => return Result(-1),
+	};
+	serial_println!("sys_close, handle: {} ", handle);
+
+	let running = process::running_process();
+	let mut lock = process::MAP.lock();
+	let process = lock.get_mut(&running).expect("running process not in hashmap");
+	let res = process.open_files.close(handle);
+	if res.is_ok() {
+		Result(0)
+	} else {
+		Result(-1)
+	}
+}
+
+bitflags! {
+	/// Flags for opening a file
+	pub struct OpenFlags: u64 {
+		/// Crate the file if it doesn't exist
+		const CREATE = 0b0001;
+		/// Truncate file
+		const TRUNCATE = 0b0010;
+	}
+}
+
+fn sys_open_dir(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let ptr = ptr as *const u8;
+	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+
+	if let Some(slice) = opt_slice {
+		let a = str::from_utf8(slice);
+		if let Ok(path) = a {
+			let running = process::running_process();
+			let mut lock = process::MAP.lock();
+			let process = lock.get_mut(&running).expect("running process not in hashmap");
+			let res = process.open_files.open_dir(path);
+			if let Ok(handle) = res {
+				Result(handle as i64)
+			} else {
+				Result(-1)
+			}
+		} else {
+			serial_println!("Invalid UTF path");
+			Result(-1)
+		}
+	} else {
+		Result(-1) // Failiure
+	}
+}
+fn sys_open(ptr: u64, len: u64, flags: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let ptr = ptr as *const u8;
+	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+	let flags = match OpenFlags::from_bits(flags) {
+		Some(f) => f,
+		None => return Result(-1),
+	};
+
+	if let Some(slice) = opt_slice {
+		let a = str::from_utf8(slice);
+		if let Ok(path) = a {
+			let running = process::running_process();
+			let mut lock = process::MAP.lock();
+			let process = lock.get_mut(&running).expect("running process not in hashmap");
+			let res = process.open_files.open_file(path, flags);
+			if let Ok(handle) = res {
+				Result(handle as i64)
+			} else {
+				Result(-1)
+			}
+		} else {
+			serial_println!("Invalid UTF path");
+			Result(-1)
+		}
+	} else {
+		Result(-1) // Failiure
+	}
+}
+
+fn sys_write(ptr: u64, len: u64, handle: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let handle: Handle = match handle.try_into() {
+		Ok(h) => h,
+		Err(_) => return Result(-1),
+	};
+	let ptr = ptr as *const u8;
+	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+
+	if let Some(slice) = opt_slice {
+		let running = process::running_process();
+		let mut lock = process::MAP.lock();
+		let process = lock.get_mut(&running).expect("running process not in hashmap");
+
+		let write_res = process.open_files.write(handle, slice);
+		match write_res {
+			Ok(count) => Result(count as i64),
+			Err(_) => Result(-1),
+		}
+	} else {
+		Result(-1) // Failiure
+	}
+}
+
+fn sys_read(ptr: u64, len: u64, handle: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let handle: Handle = match handle.try_into() {
+		Ok(h) => h,
+		Err(_) => return Result(-1),
+	};
+	let ptr = ptr as *mut u8;
+	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts_mut(ptr, len as usize).as_mut();
+	}
+
+	if let Some(slice) = opt_slice {
+		let running = process::running_process();
+		let mut lock = process::MAP.lock();
+		let process = lock.get_mut(&running).expect("running process not in hashmap");
+
+		let read_res = process.open_files.read(handle, slice);
+		match read_res {
+			Ok(count) => Result(count as i64),
+			Err(_) => Result(-1),
+		}
+	} else {
+		Result(-1) // Failiure
+	}
+}
+
+fn sys_input(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let ptr = ptr as *mut u8;
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts_mut(ptr, len as usize).as_mut();
+	}
+	if let Some(slice) = opt_slice {
+		let running = process::running_process();
+		let mut lock = process::MAP.lock();
+		let process = lock.get_mut(&running).expect("running process not in hashmap");
+		let buffer: &mut String = &mut process.input_buffer;
+
+		if buffer.len() > 0 {
+			let amount_to_take = min(buffer.len(), slice.len());
+			slice[..amount_to_take].copy_from_slice(&buffer.as_bytes()[..amount_to_take]);
+
+			buffer.drain(0..amount_to_take);
+			return Result(amount_to_take as i64);
+		} else {
+			return Blocked(BlockData::Input { slice });
+		}
+	} else {
+		return Result(-1); // Failiure
+	}
+}
+
+fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let ptr = ptr as *const u8;
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+	if let Some(slice) = opt_slice {
+		let a = str::from_utf8(slice);
+		if let Ok(s) = a {
+			print!("{}", s);
+			return Result(0);
+		} else {
+			serial_println!("Invalid UTF print");
+			return Result(-1);
+		}
+	} else {
+		return Result(-1); // Failiure
+	}
+}
+
+fn sys_exec(ptr: u64, len: u64, argv: u64, argc: u64, _: u64, _: u64) -> SyscallResult {
+	let ptr = ptr as *const u8;
+	serial_println!("sys_exec, ptr: {:?}, len: {}", ptr, len);
+	let executable_opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		executable_opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+
+	let argc = argc as usize;
+	let ptr = argv as *const &str;
+	let args;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		args = slice_from_raw_parts(ptr, argc).as_ref().unwrap();
+	}
+
+	if let Some(slice) = executable_opt_slice {
+		let a = str::from_utf8(slice);
+		if let Ok(s) = a {
+			let mut owning_string = String::new();
+			let mut local_args: Vec<&str> = Vec::new();
+			for arg in args {
+				owning_string.push_str(arg);
+			}
+			let mut start = 0;
+			for arg in args {
+				let len = arg.len();
+				local_args.push(&owning_string[start..start + len]);
+				start += len;
+			}
+
+			let res = crate::process::add_process(s, &local_args);
+			match res {
+				Ok(pid) => Result(pid as u32 as i64),
+				Err(e) => {
+					serial_println!("Failed to add process due to: {:?}", e);
+					Result(-1)
+				}
+			}
+		} else {
+			serial_println!("Invalid UTF print");
+			Result(-1)
+		}
+	} else {
+		Result(-1) // Failiure
+	}
+}
+
+// fn sys_open_file(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+// 	// This is not implemented
+// 	unimplemented!();
+
+// 	let ptr = ptr as *const u8;
+// 	// This is not sound. Who knows wha the user put as the pointer
+// 	let opt_slice;
+// 	unsafe {
+// 		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+// 	}
+// 	if let Some(slice) = opt_slice {
+// 		let a = str::from_utf8(slice);
+// 		if let Ok(path) = a {
+// 			return SyscallResult(0);
+// 		} else {
+// 			return SyscallResult(-1);
+// 		}
+// 	} else {
+// 		return SyscallResult(-1); // Failiure
+// 	}
+// }
+
+fn sys_exit(status: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let status = status as i64;
+	serial_println!("Process exited with status: {}", status);
+	process::remove_current_process();
+
+	Result(0) // I think this doesn't matter
+}
 
 fn sys_debug(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult {
 	serial_println!("DEBUG SYSCALL, arguments:");
@@ -41,49 +340,87 @@ fn sys_debug(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -
 		arg4,
 		arg5
 	);
-	return SyscallResult(0); // Success
+	return Result(0); // Success
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-struct ScratchRegisters {
-	r11: u64,
-	r10: u64,
-	r9: u64,
-	r8: u64,
-	rsi: u64,
-	rdi: u64,
-	rdx: u64,
-	rcx: u64,
-	rax: u64,
+/// Scratch registers
+pub struct ScratchRegisters {
+	/// r11 register
+	pub r11: u64,
+	/// r10 register
+	pub r10: u64,
+	/// r9 register
+	pub r9: u64,
+	/// r8 register
+	pub r8: u64,
+	/// rsi register
+	pub rsi: u64,
+	/// rdi register
+	pub rdi: u64,
+	/// rdx register
+	pub rdx: u64,
+	/// rcx register
+	pub rcx: u64,
+	/// rax register
+	pub rax: i64,
+	/// rsp register
+	pub rsp: u64,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-struct PreservedRegisters {
-	r15: u64,
-	r14: u64,
-	r13: u64,
-	r12: u64,
-	rbp: u64,
-	rbx: u64,
+/// Preserved registers
+pub struct PreservedRegisters {
+	/// r15 register
+	pub r15: u64,
+	/// r14 register
+	pub r14: u64,
+	/// r13 register
+	pub r13: u64,
+	/// r12 register
+	pub r12: u64,
+	/// rbp register
+	pub rbp: u64,
+	/// rbx register
+	pub rbx: u64,
 }
+
+const STACK_SIZE: usize = 4096 * 8;
+static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-struct Registers {
-	preserved: PreservedRegisters,
-	scratch: ScratchRegisters,
+/// Registers
+pub struct Registers {
+	/// Preserved registers
+	pub preserved: PreservedRegisters,
+	/// Scratch registers
+	pub scratch: ScratchRegisters,
+}
+
+#[allow(dead_code)] // called from asm
+#[no_mangle] // called from asm
+extern "C" fn get_new_stack_addr() -> *const u8 {
+	// Switch to kernel stack
+	let temp_stack: *const u8 = unsafe { STACK.as_ptr().add(STACK_SIZE) };
+	// unsafe {
+	// asm!("mov rsp, {stack}",
+	// stack = in(reg) temp_stack)
+	// }
+	return temp_stack;
 }
 
 #[allow(dead_code)] // called from asm
 #[no_mangle] // called from asm
 extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
-	serial_println!("HANDLING SYSCALL");
+	// serial_println!("HANDLING SYSCALL");
 	let registers: &mut Registers;
 	unsafe {
 		registers = &mut *registers_ptr;
 	}
+
 	let function = SYSCALLS.get(registers.scratch.rax as usize);
 	match function {
 		Some(func) => {
@@ -96,14 +433,20 @@ extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
 			let r10 = scratch.r10;
 			let result = func(rdi, rsi, rdx, r10, r8, r9);
 
-			scratch.rax = result.0;
-			return;
+			match result {
+				Result(r) => {
+					scratch.rax = r;
+				}
+				Blocked(data) => {
+					crate::process::block_current(data);
+				}
+			}
+			crate::process::context_switch(registers);
 		}
 		None => {
 			unimplemented!("INVALID SYSCALL");
 		}
 	}
-	// TODO cleanup stack
 }
 
 #[no_mangle] // called from asm
@@ -111,48 +454,14 @@ extern "C" fn do_nothing() {
 	serial_print!("HANDLING SYSCALL");
 }
 
-// fn resume_program_execution(registers: Registers) {
-// 	// Or reference / pointer
-// 	unsafe {
-// 		asm!(
-// 			"mov rbp, rax",
-// 			"mov rbx, rdx",
-// 			in("rax") registers.preserved.rbp,
-// 			in("rdx") registers.preserved.rbx,
-// 			// TODO figure out if i need to say I'm changing rbp
-// 			options(noreturn)
-// 		);
-
-// 		asm!(
-// 			"",
-// 			// in("rbx") registers.preserved.rbx, //moved through rdx before
-// 			// in("rbp") registers.preserved.rbp, // Moved through rax before
-// 			in("r12") registers.preserved.r12,
-// 			in("r13") registers.preserved.r13,
-// 			in("r14") registers.preserved.r14,
-// 			in("r15") registers.preserved.r15,
-// 			in("r11") registers.scratch.r11,
-// 			in("r10") registers.scratch.r10,
-// 			in("r9") registers.scratch.r9,
-// 			in("r8") registers.scratch.r8,
-// 			in("rsi") registers.scratch.rsi,
-// 			in("rdi") registers.scratch.rdi,
-// 			in("rdx") registers.scratch.rdx,
-// 			in("rcx") registers.scratch.rcx,
-// 			in("rax") registers.scratch.rax,
-// 			options(noreturn)
-// 		);
-// 		asm!("sysretq", options(noreturn))
-// 	}
-// 	unimplemented!()
-// }
-
 #[naked]
 extern "C" fn handle_syscall() {
 	unsafe {
 		asm!(
 			// Push scratch registers
 			"
+			cli
+			push rsp
 			push rax
 			push rcx
 			push rdx
@@ -171,8 +480,12 @@ extern "C" fn handle_syscall() {
 			push r14
 			push r15
 			",
-			"mov rdi, rsp", // C calling convention first variable
 			// "add rsp, 8",
+			// "call do_nothing",
+			"mov rbx, rsp", // C calling convention first variable
+			"call get_new_stack_addr",
+			"mov rsp, rax",
+			"mov rdi, rbx", // C calling convention first variable
 			"call handle_syscall_inner",
 			// Pop preserved registers
 			"
@@ -192,7 +505,8 @@ extern "C" fn handle_syscall() {
 			pop rdi
 			pop rdx
 			pop rcx
-			pop rax",
+			pop rax
+			pop rsp",
 			"sysretq",
 			options(noreturn)
 		);
@@ -220,7 +534,7 @@ pub fn setup() {
 }
 
 /// Go to ring 3 with given code and stack addresses
-pub unsafe fn go_to_ring3(code: VirtAddr, stack_end: VirtAddr) {
+pub unsafe fn go_to_ring3(code: VirtAddr, stack_end: VirtAddr, arg0: usize, arg1: usize) {
 	let cs_idx: u16 = GDT.1.user_code_selector.0;
 	let ds_idx: u16 = GDT.1.user_data_selector.0;
 
@@ -233,7 +547,11 @@ pub unsafe fn go_to_ring3(code: VirtAddr, stack_end: VirtAddr) {
 	"push 0x200",
 	"push rdx",
 	"push rdi",
+	"mov rdi, {arg0}",
+	"mov rsi, {arg1}",
 	"iretq",
+	arg0 = in(reg) arg0,
+	arg1 = in(reg) arg1,
 	in("rdi") code.as_u64(),
 	in("rsi") stack_end.as_u64(),
 	in("dx") cs_idx,

@@ -233,6 +233,7 @@ impl<'a> Terminal<'a> {
 					'\n' => self.new_line(),
 					'\t' => self.horizontal_tab(),
 					'\r' => self.carriage_return(),
+					'\x08' => self.backspace(),
 					_ => {
 						serial_println!("unmatched control: {:?}", character);
 					}
@@ -254,6 +255,12 @@ impl<'a> Terminal<'a> {
 	/// Move cursor to beginning of line.
 	fn carriage_return(&mut self) {
 		self.cursor_pos = self.cursor_pos % self.width;
+	}
+
+	fn backspace(&mut self) {
+		self.cursor_pos -= 1;
+		self.write_char(Char::new(' '));
+		self.cursor_pos -= 1;
 	}
 
 	/// Tab horizontally: move cursor forword to nearest multiple of [Terminal::TAB_SIZE].

@@ -16,7 +16,6 @@ const IRQS: usize = 16;
 
 /// Mutex wrapping chained pics. This is the interface for communicating with the pics.
 pub static PICS: spin::Mutex<ChainedPics> = spin::Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
-
 mod codegen;
 use codegen::*;
 
@@ -51,8 +50,8 @@ lazy_static! {
 
 		set_irq_handlers(&mut idt);
 
-		register_callback(0,timer_interrupt_handler);
-		register_callback(1,keyboard_interrupt_handler);
+		// register_callback(0,timer_interrupt_handler);
+		// register_callback(1,keyboard_interrupt_handler);
 
 		Mutex::new(idt)
 	};
@@ -67,8 +66,7 @@ pub fn setup() {
 	unsafe {
 		let mut pics = PICS.lock();
 		pics.initialize();
-		// const MASK: u8 = 0b1111_1000;
-		const MASK: u8 = 0b1111_1101;
+		const MASK: u8 = 0b1111_1000;
 		pics.write_masks(MASK, MASK);
 	};
 	x86_64::instructions::interrupts::enable();
@@ -96,20 +94,15 @@ fn irq_handler(stack_frame: InterruptStackFrame, irq: u8) {
 /// can register multiple functions on the same irq, and they will be called in the order that they
 /// are registered.
 pub fn register_callback(irq: u8, callback: fn(&InterruptStackFrame)) {
-	let callbacks = &mut CALLBACKS.lock();
-	match &mut callbacks[irq as usize] {
-		None => callbacks[irq as usize] = Some(vec![callback]),
-		Some(vec) => vec.push(callback),
+	{
+		x86_64::instructions::interrupts::disable();
+		let callbacks = &mut CALLBACKS.lock();
+		match &mut callbacks[irq as usize] {
+			None => callbacks[irq as usize] = Some(vec![callback]),
+			Some(vec) => vec.push(callback),
+		}
 	}
-}
-
-fn timer_interrupt_handler(_stack_frame: &InterruptStackFrame) {
-	// print!(".");
-}
-
-fn keyboard_interrupt_handler(_stack_frame: &InterruptStackFrame) {
-	use crate::io::keyboard;
-	keyboard::read_input();
+	x86_64::instructions::interrupts::enable();
 }
 
 extern "x86-interrupt" fn divide_error_handler(stack_frame: InterruptStackFrame) {

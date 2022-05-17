@@ -41,9 +41,20 @@ pub mod fs;
 pub mod util;
 
 /// Module for dealing with ELF executables
-pub mod elf;
+pub mod process;
 
 use core::panic::PanicInfo;
+
+/// End the os
+pub fn end() {
+	fs::ext2::cleanup().expect("Failed to cleanup EXT2");
+	serial_println!("Finished cleanup");
+
+	serial_println!("The end");
+
+	println!("Shutting down...");
+	util::qemu::exit();
+}
 
 /// Panic handler is called automatically when a panic occurs, and prints the information to serial
 /// for debugging.

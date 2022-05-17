@@ -99,12 +99,11 @@ fn sys_open_dir(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallRe
 			let mut lock = process::MAP.lock();
 			let process = lock.get_mut(&running).expect("running process not in hashmap");
 			let res = process.open_files.open_dir(path);
-			// if let Ok(handle) = res {
-			// 	Result(handle as i64)
-			// } else {
-			// 	Result(-1)
-			// }
-			unimplemented!()
+			if let Ok(handle) = res {
+				Result(handle as i64)
+			} else {
+				Result(-1)
+			}
 		} else {
 			serial_println!("Invalid UTF path");
 			Result(-1)

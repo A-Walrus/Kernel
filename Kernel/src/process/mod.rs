@@ -53,17 +53,23 @@ impl OpenFiles {
 		match back_handle {
 			BackHandle::File(file) => Ok(file.read(slice)?),
 			BackHandle::Dir(dir) => {
-				if dir.is_empty() {
-					return Err(Ext2Err::EndOfDir);
+				// if dir.is_empty() {
+				// 	return Err(Ext2Err::EndOfDir);
+				// }
+				match dir.last() {
+					Some(entry) => {
+						let name = &entry.name;
+						let len = name.len();
+						if len > slice.len() {
+							return Err(Ext2Err::IO(IOError::BufferTooSmall));
+						}
+						serial_println!("{}", name);
+						slice[..len].copy_from_slice(name.as_bytes());
+						dir.pop();
+						Ok(len)
+					}
+					None => Err(Ext2Err::EndOfDir),
 				}
-				let entry = &dir[0];
-				let name = &entry.name;
-				let len = name.len();
-				if len > slice.len() {
-					return Err(Ext2Err::IO(IOError::BufferTooSmall));
-				}
-				slice[..len].copy_from_slice(name.as_bytes());
-				Ok(len)
 			}
 		}
 	}

@@ -72,6 +72,29 @@ pub fn write(buffer: &[u8], handle: Handle) -> i64 {
 	unsafe { syscall3(8, buffer.as_ptr() as usize, buffer.len(), handle as usize) }
 }
 
+pub struct Dir(Handle);
+impl Dir {
+	pub fn open(path: &str) -> Result<Self, ()> {
+		let handle = open_dir(path)?;
+		Ok(Dir(handle))
+	}
+}
+
+impl Iterator for Dir {
+	type Item = String;
+	fn next(&mut self) -> Option<Self::Item> {
+		let mut buf = [0; 512];
+		let res = read(&mut buf, self.0);
+		match res {
+			count if count > 0 => {
+				let slice = &buf[..count as usize];
+				String::from_utf8(slice.to_vec()).ok()
+			}
+			_ => None,
+		}
+	}
+}
+
 pub struct File(Handle);
 
 impl File {
@@ -126,6 +149,15 @@ bitflags! {
 
 pub fn open_file(path: &str, flags: OpenFlags) -> Result<Handle, ()> {
 	let handle = unsafe { syscall3(5, path.as_ptr() as usize, path.len(), flags.bits() as usize) };
+	if handle >= 0 {
+		Ok(handle as Handle)
+	} else {
+		Err(())
+	}
+}
+
+pub fn open_dir(path: &str) -> Result<Handle, ()> {
+	let handle = unsafe { syscall2(9, path.as_ptr() as usize, path.len()) };
 	if handle >= 0 {
 		Ok(handle as Handle)
 	} else {

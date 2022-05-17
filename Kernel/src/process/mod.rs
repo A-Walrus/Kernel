@@ -4,7 +4,11 @@ use crate::{
 	mem::paging::{self, UserPageTable},
 	util::io::{IOError, Read, Seek, Write},
 };
-use alloc::{collections::VecDeque, string::String, vec::Vec};
+use alloc::{
+	collections::VecDeque,
+	string::String,
+	vec::{IntoIter, Vec},
+};
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -25,7 +29,7 @@ pub mod elf;
 
 enum BackHandle {
 	File(File),
-	Dir(Vec<Entry>),
+	Dir(IntoIter<Entry>),
 }
 
 /// A struct managing open files
@@ -56,7 +60,7 @@ impl OpenFiles {
 				// if dir.is_empty() {
 				// 	return Err(Ext2Err::EndOfDir);
 				// }
-				match dir.last() {
+				match dir.as_slice().first() {
 					Some(entry) => {
 						let name = &entry.name;
 						let len = name.len();
@@ -65,7 +69,7 @@ impl OpenFiles {
 						}
 						serial_println!("{}", name);
 						slice[..len].copy_from_slice(name.as_bytes());
-						dir.pop();
+						dir.next();
 						Ok(len)
 					}
 					None => Err(Ext2Err::EndOfDir),
@@ -98,7 +102,9 @@ impl OpenFiles {
 		let directory = Directory::from_path(path)?;
 		let handle = self.next;
 		self.next += 1;
-		let prev = self.handles.insert(handle, BackHandle::Dir(directory.entries));
+		let prev = self
+			.handles
+			.insert(handle, BackHandle::Dir(directory.entries.into_iter()));
 		assert!(prev.is_none());
 		Ok(handle)
 	}

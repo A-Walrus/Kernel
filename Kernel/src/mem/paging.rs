@@ -94,6 +94,7 @@ pub fn setup() {
 }
 
 /// Page table for a user process
+#[derive(Debug)]
 pub struct UserPageTable(pub Box<PageTable>);
 
 impl Drop for UserPageTable {

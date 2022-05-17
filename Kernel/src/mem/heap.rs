@@ -63,6 +63,7 @@ pub fn setup(frambuffer_size: usize) {
 }
 
 /// Buffer stored on the uncached heap
+#[derive(Debug)]
 pub struct UBuffer {
 	/// Pointer to the buffer on the uncached heap
 	pub slice: *mut [u8],

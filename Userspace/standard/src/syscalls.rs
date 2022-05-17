@@ -1,6 +1,7 @@
 use crate::io::{IOError, Read, Write};
 #[allow(unused_imports)]
 use crate::{syscall0, syscall1, syscall2, syscall3, syscall4, syscall5};
+use alloc::string::String;
 use bitflags::bitflags;
 
 pub fn print_a(s: &str) {
@@ -33,16 +34,73 @@ pub fn exit(status: isize) -> ! {
 	loop {}
 }
 
-pub fn exec(path: &str, args: &[&str]) {
-	unsafe {
+type Pid = usize;
+
+pub fn exec(path: &str, args: &[&str]) -> Result<Pid, ()> {
+	let pid = unsafe {
 		syscall4(
 			3,
 			path.as_ptr() as usize,
 			path.len(),
 			args.as_ptr() as usize,
 			args.len(),
-		);
+		)
+	};
+	if pid >= 0 {
+		Ok(pid as Pid)
+	} else {
+		Err(())
 	}
+}
+
+pub fn wait(pid: Pid) {
+	unsafe {
+		syscall1(10, pid as usize);
+	}
+}
+
+pub fn open_file(path: &str, flags: OpenFlags) -> Result<Handle, ()> {
+	let handle = unsafe { syscall3(5, path.as_ptr() as usize, path.len(), flags.bits() as usize) };
+	if handle >= 0 {
+		Ok(handle as Handle)
+	} else {
+		Err(())
+	}
+}
+
+pub fn open_dir(path: &str) -> Result<Handle, ()> {
+	let handle = unsafe { syscall2(9, path.as_ptr() as usize, path.len()) };
+	if handle >= 0 {
+		Ok(handle as Handle)
+	} else {
+		Err(())
+	}
+}
+
+pub fn read_line() -> String {
+	let mut s = String::new();
+	loop {
+		let mut buf = [0];
+		get_input(&mut buf);
+		let char = buf[0] as char;
+		match char {
+			'\n' => {
+				print!("\n");
+				break;
+			}
+			'\x08' => {
+				if s.pop().is_some() {
+					print!("\x08");
+				}
+			}
+			char if !char.is_ascii_control() => {
+				print!("{}", char);
+				s.push(char);
+			}
+			_ => {}
+		}
+	}
+	s
 }
 
 pub fn file_exists(path: &str) -> bool {
@@ -145,50 +203,4 @@ bitflags! {
 		/// Truncate file
 		const TRUNCATE = 0b0010;
 	}
-}
-
-pub fn open_file(path: &str, flags: OpenFlags) -> Result<Handle, ()> {
-	let handle = unsafe { syscall3(5, path.as_ptr() as usize, path.len(), flags.bits() as usize) };
-	if handle >= 0 {
-		Ok(handle as Handle)
-	} else {
-		Err(())
-	}
-}
-
-pub fn open_dir(path: &str) -> Result<Handle, ()> {
-	let handle = unsafe { syscall2(9, path.as_ptr() as usize, path.len()) };
-	if handle >= 0 {
-		Ok(handle as Handle)
-	} else {
-		Err(())
-	}
-}
-
-use alloc::string::String;
-
-pub fn read_line() -> String {
-	let mut s = String::new();
-	loop {
-		let mut buf = [0];
-		get_input(&mut buf);
-		let char = buf[0] as char;
-		match char {
-			'\n' => {
-				print!("\n");
-				break;
-			}
-			'\x08' => {
-				if s.pop().is_some() {
-					print!("\x08");
-				}
-			}
-			char if !char.is_ascii_control() => {
-				print!("{}", char);
-				s.push(char);
-			}
-			_ => {}
-		}
-	}
-	s
 }

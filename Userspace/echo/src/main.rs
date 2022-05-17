@@ -2,8 +2,7 @@
 #![no_std]
 
 extern crate alloc;
-use alloc::{string::String, vec::Vec};
-use standard::{get_args, io::Read, println, syscalls::File};
+use standard::{get_args, println};
 
 #[no_mangle]
 pub extern "C" fn main() -> isize {

@@ -959,6 +959,7 @@ fn get_indirect_blocks(
 }
 
 /// File handle
+#[derive(Debug)]
 pub struct File {
 	inode: Inode,
 	inode_data: InodeData,

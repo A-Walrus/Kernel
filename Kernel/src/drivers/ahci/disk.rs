@@ -19,6 +19,12 @@ pub struct BlockReader {
 	block_device: &'static Mutex<dyn BlockDevice>,
 }
 
+impl core::fmt::Debug for BlockReader {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		write!(f, "BlockReader")
+	}
+}
+
 impl BlockReader {
 	/// Create a new SectorReador at a certain sector, and offset, on a given block device (through
 	/// Mutex for safety)

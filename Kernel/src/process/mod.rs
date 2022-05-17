@@ -28,12 +28,14 @@ lazy_static! {
 /// Module for working with elf executables
 pub mod elf;
 
+#[derive(Debug)]
 enum BackHandle {
 	File(File),
 	Dir(IntoIter<Entry>),
 }
 
 /// A struct managing open files
+#[derive(Debug)]
 pub struct OpenFiles {
 	handles: HashMap<Handle, BackHandle>,
 	next: Handle, // handles: (),
@@ -121,12 +123,14 @@ impl OpenFiles {
 	}
 }
 
+#[derive(Debug)]
 enum State {
 	New(elf::LoadData),
 	Running { registers: Registers },
 }
 
 /// Data needed when unblocking process
+#[derive(Debug)]
 pub enum BlockData {
 	/// data for input syscall
 	Input {
@@ -140,6 +144,7 @@ pub enum BlockData {
 unsafe impl Sync for BlockData {}
 unsafe impl Send for BlockData {}
 
+#[derive(Debug)]
 enum BlockState {
 	Blocked { still: bool, data: BlockData },
 	Ready,
@@ -156,6 +161,7 @@ impl BlockState {
 }
 
 /// Process control block
+#[derive(Debug)]
 pub struct PCB {
 	// pid: Pid,
 	state: State,
@@ -165,6 +171,8 @@ pub struct PCB {
 	pub input_buffer: String,
 	/// This processes open files
 	pub open_files: OpenFiles,
+
+	waiting_processes: Vec<Pid>,
 }
 
 /// Get process in foreground
@@ -200,6 +208,11 @@ impl PCB {
 			}
 			_ => {}
 		}
+	}
+
+	/// Append a process to waiting processes
+	pub fn append_waiting(&mut self, pid: Pid) {
+		self.waiting_processes.push(pid);
 	}
 
 	fn try_run(&mut self) {
@@ -301,10 +314,24 @@ pub fn run_next_process() {
 pub fn remove_current_process() {
 	{
 		let mut lock = QUEUE.lock();
-		let pid = lock.pop_front().expect("No processes");
+		let removing_pid = lock.pop_front().expect("No processes");
 
-		let prev_value = MAP.lock().remove(&pid);
+		let mut lock = MAP.lock();
+		let prev_value = lock.remove(&removing_pid);
 		assert!(prev_value.is_some());
+		for pid in prev_value.unwrap().waiting_processes {
+			let process = lock.get_mut(&pid).unwrap();
+			match &mut process.block_state {
+				BlockState::Blocked {
+					still,
+					data: BlockData::Wait(waiting_pid),
+				} if *waiting_pid == removing_pid => {
+					*still = false;
+				}
+				_ => {}
+			}
+			serial_println!("{:?}", process.block_state);
+		}
 
 		if lock.is_empty() {
 			crate::end();
@@ -315,15 +342,15 @@ pub fn remove_current_process() {
 }
 
 /// Remove a process from running
-pub fn remove_process(pid: Pid) {
-	let prev_value = MAP.lock().remove(&pid);
-	assert!(prev_value.is_some());
+// pub fn remove_process(pid: Pid) {
+// let prev_value = MAP.lock().remove(&pid);
+// assert!(prev_value.is_some());
 
-	let mut lock = QUEUE.lock();
-	let index = lock.iter().position(|x| *x == pid).unwrap();
-	let prev_value = lock.remove(index);
-	assert!(prev_value.is_some());
-}
+// let mut lock = QUEUE.lock();
+// let index = lock.iter().position(|x| *x == pid).unwrap();
+// let prev_value = lock.remove(index);
+// assert!(prev_value.is_some());
+// }
 
 fn cycle() {
 	{
@@ -378,6 +405,7 @@ fn create_process(executable_path: &str, args: &[&str]) -> Result<PCB, elf::ElfE
 		input_buffer: String::new(),
 		block_state: BlockState::Ready,
 		open_files: OpenFiles::new(),
+		waiting_processes: Vec::new(),
 		page_table,
 	})
 }

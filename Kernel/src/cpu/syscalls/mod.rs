@@ -64,6 +64,11 @@ const SYSCALLS: [Syscall; 11] = [
 /// Block the process until the process with pid exits
 fn sys_wait(pid: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let pid = pid as Pid;
+	let mut lock = process::MAP.lock();
+	let process = lock.get_mut(&pid).expect("running process not in hashmap");
+	let running = process::running_process();
+	process.append_waiting(running);
+
 	Blocked(BlockData::Wait(pid))
 }
 fn sys_close(handle: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {

@@ -43,7 +43,7 @@ impl From<Ext2Err> for ElfErr {
 }
 
 /// Data after loading an elf process
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct LoadData {
 	/// Entrypoint
 	pub entry: VirtAddr,

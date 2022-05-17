@@ -11,4 +11,5 @@ members = [
   "echo",
   "touch",
   "ls",
+  "hangman",
 ]

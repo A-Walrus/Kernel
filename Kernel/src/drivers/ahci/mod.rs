@@ -76,7 +76,6 @@ pub unsafe fn get_disks() -> Result<Vec<Box<dyn BlockDevice>>, AhciError> {
 			let virt_addr = paging::phys_to_virt(address);
 			let hba_memory: &mut Memory;
 			hba_memory = &mut *(virt_addr.as_mut_ptr());
-			println!("AHCI Version: {}", hba_memory.version.read());
 
 			hba_memory.global_host_control.write(1 << 31 | 1 << 1);
 

@@ -53,10 +53,10 @@ pub fn get_ext2_partition() -> Option<Partition> {
 					0xAF, 0x3D, 0xC6, 0xF, 0x83, 0x84, 0x72, 0x47, 0x8E, 0x79, 0x3D, 0x69, 0xD8, 0x47, 0x7D, 0xE4,
 				];
 				if gpt_partition.type_guid == LINUX_FILE_SYSTEM {
-					println!(
-						"FOUND LINUX FILE SYSTEM! Sectors : {} -> {}",
-						gpt_partition.first_lba, gpt_partition.last_lba
-					);
+					// println!(
+					// 	"FOUND LINUX FILE SYSTEM! Sectors : {} -> {}",
+					// 	gpt_partition.first_lba, gpt_partition.last_lba
+					// );
 					return Some(Partition::new(
 						gpt_partition.first_lba,
 						gpt_partition.last_lba - gpt_partition.first_lba,

@@ -1081,11 +1081,10 @@ impl Write for File {
 			self.inode_data.size_lower = self.position as u32
 		}
 
+		// Update added blocks
 		if !added_blocks.is_empty() {
 			let mut new_blocks = added_blocks.len();
-			// Update used sector count
 
-			// Update blocks
 			if self.blocks.len() <= 12 {
 				// Only direct blocks
 				self.inode_data.direct_block_pointers[..self.blocks.len()].copy_from_slice(&self.blocks);
@@ -1095,37 +1094,37 @@ impl Write for File {
 
 				let old0 = old_block_count;
 				let new0 = self.blocks.len();
-				serial_println!("0: {}	->	{}", old0, new0);
+				// serial_println!("0: {}	->	{}", old0, new0);
 
 				let old1 = next_tier_blocks(old0, 0, blocks_per_block);
 				let new1 = next_tier_blocks(new0, 0, blocks_per_block);
-				serial_println!("1: {}	->	{}", old1, new1);
+				// serial_println!("1: {}	->	{}", old1, new1);
 
 				let old2 = next_tier_blocks(old1, 1, blocks_per_block);
 				let new2 = next_tier_blocks(new1, 1, blocks_per_block);
-				serial_println!("2: {}	->	{}", old2, new2);
+				// serial_println!("2: {}	->	{}", old2, new2);
 
 				let old3 = next_tier_blocks(old2, 2, blocks_per_block);
 				let new3 = next_tier_blocks(new2, 2, blocks_per_block);
-				serial_println!("3: {}	->	{}", old3, new3);
+				// serial_println!("3: {}	->	{}", old3, new3);
 
 				let mut reader = self.reader.clone();
 
-				let a = do_thing(
+				let a = fill_block_pointers(
 					&mut reader,
 					old3,
 					new3,
-					slice::from_mut(&mut self.inode_data.singly_indirect_pointer),
+					slice::from_mut(&mut self.inode_data.triply_indirect_pointer),
 					&[],
 				)?;
-				let b = do_thing(
+				let b = fill_block_pointers(
 					&mut reader,
 					old2,
 					new2,
 					slice::from_mut(&mut self.inode_data.doubly_indirect_pointer),
 					&a,
 				)?;
-				let c = do_thing(
+				let c = fill_block_pointers(
 					&mut reader,
 					old1,
 					new1,
@@ -1161,6 +1160,7 @@ impl Write for File {
 				new_blocks += new1 + new2 + new3 - old1 - old2 - old3;
 			}
 
+			// Update used sector count
 			let added_sector_count = new_blocks * self.reader.sectors_per_block();
 			self.inode_data.sectors_in_use += added_sector_count as u32;
 		}
@@ -1173,7 +1173,7 @@ impl Write for File {
 	}
 }
 
-fn do_thing(
+fn fill_block_pointers(
 	mut reader: &mut BlockReader,
 	old: usize,
 	new: usize,
@@ -1242,6 +1242,7 @@ fn do_thing(
 	Ok(vec)
 }
 
+/// Get number of blocks required in next tier
 fn next_tier_blocks(count: usize, tier: usize, bpb: usize) -> usize {
 	let in_inode = if tier == 0 { 12 } else { 1 };
 	if count <= in_inode {

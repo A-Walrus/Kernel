@@ -48,16 +48,15 @@ pub extern "C" fn main() -> isize {
 				state += 1;
 			}
 			if state == HANGMANS.len() {
-				println!("You lose! The word was {}.", word);
+				println!("\nYou lose! The word was {}.", word);
 				break;
 			}
 			println!("\n{}", HANGMANS[state]);
 			println!("{:?}", guesses);
-		}
-
-		if !guessed_word.contains(&'_') {
-			println!("You win!");
-			break;
+			if !guessed_word.contains(&'_') {
+				println!("You win!");
+				break;
+			}
 		}
 	}
 	return 0;

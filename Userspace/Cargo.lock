@@ -84,6 +84,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "loop"
+version = "0.1.0"
+dependencies = [
+ "standard",
+]
+
+[[package]]
 name = "ls"
 version = "0.1.0"
 dependencies = [

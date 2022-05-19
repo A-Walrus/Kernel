@@ -12,4 +12,6 @@ members = [
   "touch",
   "ls",
   "hangman",
+  "divide",
+  "null_ptr",
 ]

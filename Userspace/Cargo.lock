@@ -32,6 +32,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "divide"
+version = "0.1.0"
+dependencies = [
+ "standard",
+]
+
+[[package]]
 name = "echo"
 version = "0.1.0"
 dependencies = [
@@ -78,6 +85,13 @@ dependencies = [
 
 [[package]]
 name = "ls"
+version = "0.1.0"
+dependencies = [
+ "standard",
+]
+
+[[package]]
+name = "null_ptr"
 version = "0.1.0"
 dependencies = [
  "standard",

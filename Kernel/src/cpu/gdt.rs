@@ -9,20 +9,30 @@ use x86_64::{
 	VirtAddr,
 };
 
-/// size of the user stack
-pub const STACK_SIZE: usize = 4096 * 8;
-/// Stack for interrupt handlers and syscalls
-pub static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+/// size of the interrupt stack
+const STACK_SIZE: usize = 4096 * 2;
 
 lazy_static! {
 	static ref TSS: TaskStateSegment = {
 		let mut tss = TaskStateSegment::new();
 		tss.interrupt_stack_table[0] = {
+			/// Stack for interrupt handlers and syscalls
+			static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
 
 			let stack_start = VirtAddr::from_ptr(unsafe { &STACK });
 			let stack_end = stack_start + STACK_SIZE;
 			stack_end
 		};
+
+		tss.interrupt_stack_table[1] = {
+			/// Stack for interrupt handlers and syscalls
+			static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+
+			let stack_start = VirtAddr::from_ptr(unsafe { &STACK });
+			let stack_end = stack_start + STACK_SIZE;
+			stack_end
+		};
+
 		// tss.privilege_stack_table[0] = VirtAddr::new(0xFFFF900000000000);
 		tss
 	};

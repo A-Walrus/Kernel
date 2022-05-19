@@ -65,11 +65,15 @@ const SYSCALLS: [Syscall; 11] = [
 fn sys_wait(pid: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let pid = pid as Pid;
 	let mut lock = process::MAP.lock();
-	let process = lock.get_mut(&pid).expect("running process not in hashmap");
-	let running = process::running_process();
-	process.append_waiting(running);
+	match lock.get_mut(&pid) {
+		Some(process) => {
+			let running = process::running_process();
+			process.append_waiting(running);
 
-	Blocked(BlockData::Wait(pid))
+			Blocked(BlockData::Wait(pid))
+		}
+		None => Result(-1),
+	}
 }
 fn sys_close(handle: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let handle: Handle = match handle.try_into() {

@@ -243,7 +243,10 @@ impl PCB {
 	}
 
 	fn run_proc(&mut self) {
-		unsafe { RUNNING = true };
+		unsafe {
+			RUNNING = true;
+			crate::cpu::interrupts::COUNTER = 0;
+		};
 
 		// Switch to process page table
 		unsafe {

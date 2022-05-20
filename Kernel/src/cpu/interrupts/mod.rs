@@ -59,7 +59,10 @@ lazy_static! {
 	};
 }
 
-static mut COUNTER: usize = 0;
+const QUANTA: usize = 5;
+
+/// count of ticks since starting current process
+pub static mut COUNTER: usize = 0;
 
 #[allow(dead_code)] // called from asm
 #[no_mangle] // called from asm
@@ -73,8 +76,9 @@ extern "C" fn handle_timer_inner(registers_ptr: *mut Registers) -> *const u8 {
 		PICS.lock().notify_end_of_interrupt(PIC_1_OFFSET + 0);
 	}
 	let running = unsafe { process::RUNNING };
-	if running && count % 10 == 0 {
-		// serial_println!("HANDLING SYSCALL");
+	if running && count >= QUANTA {
+		serial_println!("The clock's run out, time's up, over, blaow");
+
 		let registers: &mut Registers;
 		unsafe {
 			registers = &mut *registers_ptr;

@@ -15,4 +15,5 @@ members = [
   "divide",
   "null_ptr",
   "loop",
+  "pi",
 ]

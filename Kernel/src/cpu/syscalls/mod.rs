@@ -422,7 +422,7 @@ pub struct Registers {
 
 #[allow(dead_code)] // called from asm
 #[no_mangle] // called from asm
-extern "C" fn get_new_stack_addr() -> *const u8 {
+extern "C" fn get_syscall_stack_addr() -> *const u8 {
 	// Switch to kernel stack
 	let temp_stack: *const u8 = unsafe { STACK.as_ptr().add(STACK_SIZE) };
 	// unsafe {
@@ -461,13 +461,13 @@ extern "C" fn handle_syscall_inner(registers_ptr: *mut Registers) {
 					crate::process::block_current(data);
 				}
 			}
-			crate::process::context_switch(registers);
+			crate::process::context_switch(process::State::Syscall { registers: *registers });
 		}
 		None => {
 			// No syscall with that id
 			let scratch = &mut registers.scratch;
 			scratch.rax = -1;
-			crate::process::context_switch(registers);
+			crate::process::context_switch(process::State::Syscall { registers: *registers });
 		}
 	}
 }
@@ -506,7 +506,7 @@ extern "C" fn handle_syscall() {
 			// "add rsp, 8",
 			// "call do_nothing",
 			"mov rbx, rsp", // C calling convention first variable
-			"call get_new_stack_addr",
+			"call get_syscall_stack_addr",
 			"mov rsp, rax",
 			"mov rdi, rbx", // C calling convention first variable
 			"call handle_syscall_inner",
@@ -560,9 +560,9 @@ pub fn setup() {
 pub unsafe fn go_to_ring3(code: VirtAddr, stack_end: VirtAddr, arg0: usize, arg1: usize) {
 	let cs_idx: u16 = GDT.1.user_code_selector.0;
 	let ds_idx: u16 = GDT.1.user_data_selector.0;
+	// serial_println!("{:?}, {:?}", cs_idx, ds_idx);
 
 	use x86_64::instructions::segmentation::Segment;
-	x86_64::instructions::tlb::flush_all();
 	DS::set_reg(GDT.1.user_data_selector);
 	asm!(
 	"push rax",

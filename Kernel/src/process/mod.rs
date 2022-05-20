@@ -12,6 +12,10 @@ use alloc::{
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
+use x86_64::VirtAddr;
+
+/// Are processes running
+pub static mut RUNNING: bool = false;
 
 /// An identifier for a process. This is unique per process
 pub type Pid = usize;
@@ -43,6 +47,14 @@ pub struct OpenFiles {
 
 unsafe impl Send for PCB {}
 unsafe impl Sync for PCB {}
+
+/// Start process execution loop
+pub fn start() {
+	// unsafe {
+	// RUNNING = true;
+	// }
+	run_next_process();
+}
 
 /// File handle
 pub type Handle = u32;
@@ -124,9 +136,24 @@ impl OpenFiles {
 }
 
 #[derive(Debug)]
-enum State {
+/// State of process
+pub enum State {
+	/// new process
 	New(elf::LoadData),
-	Running { registers: Registers },
+	/// process stopped by syscall
+	Syscall {
+		/// saved registers
+		registers: Registers,
+	},
+	/// process stopped by timer
+	Timer {
+		/// saved registers
+		registers: Registers,
+		/// saved RIP
+		instruction_pointer: VirtAddr,
+		/// saved rflags
+		rflags: u64,
+	},
 }
 
 /// Data needed when unblocking process
@@ -215,7 +242,9 @@ impl PCB {
 		self.waiting_processes.push(pid);
 	}
 
-	fn try_run(&mut self) {
+	fn run_proc(&mut self) {
+		unsafe { RUNNING = true };
+
 		// Switch to process page table
 		unsafe {
 			paging::set_page_table(&self.page_table.0);
@@ -225,7 +254,63 @@ impl PCB {
 				// serial_println!("Going to ring3 - start: {:?} stack: {:?}", start, stack);
 				syscalls::go_to_ring3(data.entry, data.stack_top, data.argc, data.argv.as_u64() as usize);
 			},
-			State::Running { registers } => {
+			State::Timer {
+				registers,
+				instruction_pointer,
+				rflags,
+			} => {
+				// serial_println!("restoring {:?}", registers);
+				unsafe {
+					use crate::cpu::gdt::GDT;
+					let cs_idx: u16 = GDT.1.user_code_selector.0;
+					let ds_idx: u16 = GDT.1.user_data_selector.0;
+
+					use x86_64::instructions::segmentation::{Segment, DS};
+					DS::set_reg(GDT.1.user_data_selector);
+
+					asm!(
+						"push rax",
+						"push {sp}",
+						"push {flags}",
+						"push rdx",
+						"push {ip}",
+						"add rsp, 8*5",
+						sp = in(reg) registers.scratch.rsp,
+						flags = in(reg) rflags,
+						ip = in(reg) instruction_pointer.as_u64(),
+						in("dx") cs_idx,
+						in("ax") ds_idx,
+
+					);
+
+					asm!(
+						"mov rbp, {rbp}",
+						"mov rbx, {rbx}",
+						rbp = in(reg) registers.preserved.rbp,
+						rbx = in(reg) registers.preserved.rbx,
+						// TODO figure out if i need to say I'm changing rbp
+					);
+					asm!(
+						"",
+						in("r12") registers.preserved.r12,
+						in("r13") registers.preserved.r13,
+						in("r14") registers.preserved.r14,
+						in("r15") registers.preserved.r15,
+						in("r11") registers.scratch.r11,
+						in("r10") registers.scratch.r10,
+						in("r9") registers.scratch.r9,
+						in("r8") registers.scratch.r8,
+						in("rsi") registers.scratch.rsi,
+						in("rax") registers.scratch.rax,
+						in("rdi") registers.scratch.rdi,
+						in("rdx") registers.scratch.rdx,
+						in("rcx") registers.scratch.rcx,
+					);
+
+					asm!("sub rsp, 8*5", "iretq");
+				}
+			}
+			State::Syscall { registers } => {
 				if let BlockState::Blocked {
 					still: false,
 					data: BlockData::Input { slice },
@@ -287,7 +372,10 @@ impl PCB {
 }
 
 /// Run the next process in the queue
-pub fn run_next_process() {
+pub fn run_next_process() -> ! {
+	unsafe {
+		RUNNING = false;
+	}
 	loop {
 		x86_64::instructions::interrupts::disable();
 		let len = QUEUE.lock().len();
@@ -299,7 +387,7 @@ pub fn run_next_process() {
 				unsafe {
 					MAP.force_unlock();
 				}
-				process.try_run();
+				process.run_proc();
 			} else {
 				// serial_println!("blocked");
 			}
@@ -361,12 +449,12 @@ fn cycle() {
 }
 
 /// Context switch to next process
-pub fn context_switch(registers: &Registers) {
+pub fn context_switch(state: State) -> ! {
 	{
 		let pid: Pid = QUEUE.lock()[0];
 		let mut lock = MAP.lock();
 		let mut process = lock.get_mut(&pid).expect("process from queue not in hashmap");
-		process.state = State::Running { registers: *registers };
+		process.state = state;
 	}
 	cycle();
 

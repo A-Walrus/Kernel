@@ -3,9 +3,9 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
 pub fn set_irq_handlers(idt: &mut InterruptDescriptorTable) {
 	unsafe {
-		idt[(PIC_1_OFFSET + 0) as usize]
-			.set_handler_fn(irq_handler_0)
-			.set_stack_index(0);
+		// idt[(PIC_1_OFFSET + 0) as usize]
+		// .set_handler_fn(irq_handler_0)
+		// .set_stack_index(0);
 		idt[(PIC_1_OFFSET + 1) as usize]
 			.set_handler_fn(irq_handler_1)
 			.set_stack_index(0);
@@ -54,9 +54,9 @@ pub fn set_irq_handlers(idt: &mut InterruptDescriptorTable) {
 	}
 }
 
-extern "x86-interrupt" fn irq_handler_0(stack_frame: InterruptStackFrame) {
-	irq_handler(stack_frame, 0);
-}
+// extern "x86-interrupt" fn irq_handler_0(stack_frame: InterruptStackFrame) {
+// irq_handler(stack_frame, 0);
+// }
 
 extern "x86-interrupt" fn irq_handler_1(stack_frame: InterruptStackFrame) {
 	irq_handler(stack_frame, 1);

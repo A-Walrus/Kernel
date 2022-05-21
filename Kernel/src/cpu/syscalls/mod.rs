@@ -47,7 +47,7 @@ pub enum SyscallResult {
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 11] = [
+const SYSCALLS: [Syscall; 12] = [
 	sys_debug,
 	sys_print,
 	sys_exit,
@@ -59,7 +59,17 @@ const SYSCALLS: [Syscall; 11] = [
 	sys_write,
 	sys_open_dir,
 	sys_wait,
+	sys_kill,
 ];
+
+/// Block the process until the process with pid exits
+fn sys_kill(pid: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let pid = pid as Pid;
+	if pid != process::running_process() {
+		process::remove_process(pid)
+	}
+	Result(0)
+}
 
 /// Block the process until the process with pid exits
 fn sys_wait(pid: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {

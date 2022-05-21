@@ -16,4 +16,5 @@ members = [
   "null_ptr",
   "loop",
   "pi",
+  "count",
 ]

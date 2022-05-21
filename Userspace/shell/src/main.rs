@@ -4,12 +4,15 @@
 extern crate alloc;
 use alloc::{string::ToString, vec::Vec};
 use standard::{
-	print, println,
+	get_args, print, println,
 	syscalls::{exec, file_exists, read_line, wait},
 };
 
 #[no_mangle]
 pub extern "C" fn main() -> isize {
+	let args = get_args();
+	println!("TTY: {}", args[0]);
+
 	loop {
 		print!("GuyOS > ");
 		let input = read_line();

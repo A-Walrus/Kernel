@@ -277,12 +277,11 @@ extern "x86-interrupt" fn general_protection_fault_handler(stack_frame: Interrup
 /// pages, etc...), rather just prints some information about the fault.
 extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode) {
 	use x86_64::registers::control::Cr2;
-
 	serial_println!("EXCEPTION: page fault");
 	serial_println!(" - Accessed Address: {:?}", Cr2::read());
 	serial_println!(" - Error Code: {:?}", error_code);
 	serial_println!(" - {:#?}", stack_frame);
-	loop {}
+	try_recover("page fault", stack_frame);
 }
 
 extern "x86-interrupt" fn x87_floating_point_handler(stack_frame: InterruptStackFrame) {
@@ -309,20 +308,8 @@ extern "x86-interrupt" fn security_exception_handler(stack_frame: InterruptStack
 }
 
 fn exception(string: &str, stack_frame: InterruptStackFrame) -> ! {
-	use crate::process;
-	use x86_64::{registers::segmentation::SegmentSelector, PrivilegeLevel};
 	serial_println!("EXCEPTION: {} \n - {:#?}", string, stack_frame);
-	let code_selector = SegmentSelector(stack_frame.code_segment as u16);
-	let from_userspace = code_selector.rpl() == PrivilegeLevel::Ring3;
-	if from_userspace {
-		serial_println!("From User");
-		process::remove_current_process();
-		loop {} // don't think this is reachable
-	} else {
-		serial_println!("From Kernel");
-		serial_println!("EXCEPTION: {} \n - {:#?}", string, stack_frame);
-		loop {}
-	}
+	try_recover(string, stack_frame)
 }
 
 fn exception_error(string: &str, stack_frame: InterruptStackFrame, error_code: u64) -> ! {
@@ -332,5 +319,18 @@ fn exception_error(string: &str, stack_frame: InterruptStackFrame, error_code: u
 		error_code,
 		stack_frame
 	);
-	loop {}
+	try_recover(string, stack_frame)
+}
+
+fn try_recover(string: &str, stack_frame: InterruptStackFrame) -> ! {
+	println!("\x1b[31m\x1b[4mEXCEPTION:\x1b[0m {}", string);
+	use x86_64::{registers::segmentation::SegmentSelector, PrivilegeLevel};
+	let code_selector = SegmentSelector(stack_frame.code_segment as u16);
+	let from_userspace = code_selector.rpl() == PrivilegeLevel::Ring3;
+	if from_userspace {
+		process::remove_current_process();
+		loop {} // don't think this is reachable
+	} else {
+		loop {}
+	}
 }

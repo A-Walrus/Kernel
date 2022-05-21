@@ -26,7 +26,6 @@ fn screen() -> &'static Screen<'static> {
 
 /// cycle to next terminal
 pub fn cycle_terms(offset: isize) {
-	serial_println!("alt");
 	let new_active = (active_term() + (TERM_COUNT as isize - offset) as usize) % TERM_COUNT;
 	unsafe { ACTIVE_TERM = new_active };
 	match unsafe { &mut TERMINALS } {
@@ -89,7 +88,7 @@ pub struct Pixel {
 
 impl Pixel {
 	/// Create a new pixel of a given color.
-	pub fn new(red: u8, green: u8, blue: u8) -> Self {
+	pub const fn new(red: u8, green: u8, blue: u8) -> Self {
 		Pixel { blue, green, red }
 	}
 }
@@ -167,9 +166,58 @@ type Buffer<'a> = &'a mut [Pixel];
 /// Styling of a character: color, bold, italic, strikthrough...
 /// This is currently not used.
 #[derive(Copy, Clone, Debug)]
-struct Style {}
+struct Style {
+	fg_color: Pixel,
+	bg_color: Pixel,
+	underline: bool,
+	strike_through: bool,
+}
+impl Style {
+	// 0, 0, 0
+	// 205, 49, 49
+	// 13, 188, 121
+	// 229, 229, 16
+	// 36, 114, 200
+	// 188, 63, 188
+	// 17, 168, 205
+	// 229, 229, 229
+	// 102, 102, 102
+	// 241, 76, 76
+	// 35, 209, 139
+	// 245, 245, 67
+	// 59, 142, 234
+	// 214, 112, 214
+	// 41, 184, 219
+	// 229, 229, 229
 
-impl Style {}
+	const BLACK: Pixel = Pixel::new(0, 0, 0);
+	const RED: Pixel = Pixel::new(205, 49, 49);
+	const GREEN: Pixel = Pixel::new(13, 188, 121);
+	const YELLOW: Pixel = Pixel::new(229, 229, 16);
+	const BLUE: Pixel = Pixel::new(36, 114, 200);
+	const MAGENTA: Pixel = Pixel::new(188, 63, 188);
+	const CYAN: Pixel = Pixel::new(17, 168, 205);
+	const LIGHT_GRAY: Pixel = Pixel::new(229, 229, 229);
+	const DARK_GRAY: Pixel = Pixel::new(102, 102, 102);
+	const BRIGHT_RED: Pixel = Pixel::new(241, 76, 76);
+	const BRIGHT_GREEN: Pixel = Pixel::new(35, 209, 139);
+	const BRIGHT_YELLOW: Pixel = Pixel::new(245, 245, 67);
+	const BRIGHT_BLUE: Pixel = Pixel::new(59, 142, 234);
+	const BRIGHT_MAGENTA: Pixel = Pixel::new(214, 112, 214);
+	const BRIGHT_CYAN: Pixel = Pixel::new(41, 184, 219);
+	const WHITE: Pixel = Pixel::new(229, 229, 229);
+}
+
+impl Default for Style {
+	fn default() -> Self {
+		Style {
+			fg_color: Style::WHITE,
+			bg_color: Style::BLACK,
+			underline: false,
+			strike_through: false,
+		}
+	}
+}
 
 /// A screen has two buffers, front, and back, to be used for double buffering.
 /// The front buffer is the one that is mapped to the screen (or a region of the screen), and the
@@ -237,7 +285,7 @@ impl Char {
 	fn new(character: char) -> Self {
 		Self {
 			character,
-			style: Style {},
+			style: Style::default(),
 		}
 	}
 }
@@ -256,9 +304,10 @@ pub struct Terminal {
 	/// Height of screen in characters.
 	height: usize,
 	/// Pixels of empty row for efficient clearing.
-	empty: Vec<Pixel>,
+	// empty: Vec<Pixel>,
 	/// index
 	id: usize,
+	brush: Style,
 }
 
 impl Terminal {
@@ -289,7 +338,8 @@ impl Terminal {
 			height,
 			cursor_pos: 0,
 			chars: vec![Char::new(' '); width * height],
-			empty: vec![Pixel::new(0, 0, 0); width * Terminal::CHAR_HEIGHT * Terminal::CHAR_WIDTH],
+			// empty: vec![Pixel::new(0, 0, 0); width * Terminal::CHAR_HEIGHT * Terminal::CHAR_WIDTH],
+			brush: Style::default(),
 			id,
 		}
 	}
@@ -301,13 +351,72 @@ impl Terminal {
 	/// write a string to the terimnal.
 	pub fn write(&mut self, data: &str) {
 		let start_line = self.cursor_pos / self.width;
-		for character in data.chars() {
+		let mut iter = data.chars();
+		while !iter.as_str().is_empty() {
+			let character = iter.next().unwrap();
 			if character.is_ascii_control() {
 				match character {
 					'\n' => self.new_line(),
 					'\t' => self.horizontal_tab(),
 					'\r' => self.carriage_return(),
 					'\x08' => self.backspace(),
+					'\x1b' => {
+						let next = iter.next();
+						match next {
+							Some('[') => {
+								let index = iter.as_str().find(|c| c == 'm').unwrap();
+								let num_str = &iter.as_str()[..index];
+								let num: usize = if num_str == "" { 0 } else { num_str.parse().unwrap() };
+								match num {
+									0 => self.brush = Style::default(),
+									4 => self.brush.underline = true,
+									9 => self.brush.strike_through = true,
+									24 => self.brush.underline = false,
+									29 => self.brush.strike_through = false,
+
+									30 => self.brush.fg_color = Style::BLACK,
+									31 => self.brush.fg_color = Style::RED,
+									32 => self.brush.fg_color = Style::GREEN,
+									33 => self.brush.fg_color = Style::YELLOW,
+									34 => self.brush.fg_color = Style::BLUE,
+									35 => self.brush.fg_color = Style::MAGENTA,
+									36 => self.brush.fg_color = Style::CYAN,
+									37 => self.brush.fg_color = Style::LIGHT_GRAY,
+
+									40 => self.brush.bg_color = Style::BLACK,
+									41 => self.brush.bg_color = Style::RED,
+									42 => self.brush.bg_color = Style::GREEN,
+									43 => self.brush.bg_color = Style::YELLOW,
+									44 => self.brush.bg_color = Style::BLUE,
+									45 => self.brush.bg_color = Style::MAGENTA,
+									46 => self.brush.bg_color = Style::CYAN,
+									47 => self.brush.bg_color = Style::LIGHT_GRAY,
+
+									90 => self.brush.fg_color = Style::DARK_GRAY,
+									91 => self.brush.fg_color = Style::BRIGHT_RED,
+									92 => self.brush.fg_color = Style::BRIGHT_GREEN,
+									93 => self.brush.fg_color = Style::BRIGHT_YELLOW,
+									94 => self.brush.fg_color = Style::BRIGHT_BLUE,
+									95 => self.brush.fg_color = Style::BRIGHT_MAGENTA,
+									96 => self.brush.fg_color = Style::BRIGHT_CYAN,
+									97 => self.brush.fg_color = Style::WHITE,
+
+									100 => self.brush.fg_color = Style::DARK_GRAY,
+									101 => self.brush.fg_color = Style::BRIGHT_RED,
+									102 => self.brush.fg_color = Style::BRIGHT_GREEN,
+									103 => self.brush.fg_color = Style::BRIGHT_YELLOW,
+									104 => self.brush.fg_color = Style::BRIGHT_BLUE,
+									105 => self.brush.fg_color = Style::BRIGHT_MAGENTA,
+									106 => self.brush.fg_color = Style::BRIGHT_CYAN,
+									107 => self.brush.fg_color = Style::WHITE,
+
+									_ => todo!(),
+								}
+								iter.nth(index);
+							}
+							_ => todo!(),
+						}
+					}
 					_ => {
 						serial_println!("unmatched control: {:?}", character);
 					}
@@ -315,7 +424,7 @@ impl Terminal {
 			} else {
 				self.write_char(Char {
 					character,
-					style: Style {},
+					style: self.brush,
 				});
 			}
 		}
@@ -390,7 +499,8 @@ impl Terminal {
 			screen_mut().back.copy_within(pixels_per_char_row.., 0);
 
 			let len = screen().back.len();
-			screen_mut().back[len - pixels_per_char_row..].clone_from_slice(&self.empty);
+			// screen_mut().back[len - pixels_per_char_row..].clone_from_slice(&self.empty);
+			screen_mut().back[len - pixels_per_char_row..].fill(Style::BLACK);
 
 			screen_mut().flush();
 		}
@@ -411,11 +521,14 @@ impl Terminal {
 			let ascii = character.character as usize;
 			let char_bitmap = &FONT[ascii];
 			for row in 0..Terminal::CHAR_HEIGHT {
+				let underline = self.brush.underline && (row == 13);
+				let strike = self.brush.strike_through && (row == 7);
+				let row_filled = underline || strike;
 				for col in 0..Terminal::CHAR_WIDTH {
-					let color = if char_bitmap[row] & MASK[col] != 0 {
-						Pixel::new(255, 255, 255)
+					let color = if char_bitmap[row] & MASK[col] != 0 || row_filled {
+						self.brush.fg_color
 					} else {
-						Pixel::new(0, 0, 0)
+						self.brush.bg_color
 					};
 					if self.is_active() {
 						screen_mut().put_pixel(color, &pos);

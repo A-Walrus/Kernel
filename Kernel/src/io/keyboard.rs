@@ -2,7 +2,7 @@ use crate::serial_println;
 // use crate::serial_print;
 use crate::process;
 use lazy_static::lazy_static;
-use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
+use pc_keyboard::{layouts, DecodedKey, HandleControl, KeyCode, Keyboard, ScancodeSet1};
 use spin::Mutex;
 use x86_64::{
 	instructions::port::{Port, PortGeneric, ReadWriteAccess},
@@ -46,8 +46,10 @@ fn parse_scan_code(scancode: u8) {
 		if let Some(key) = keyboard.process_keyevent(key_event) {
 			match key {
 				DecodedKey::Unicode(character) => {
-					for process in process::MAP.lock().iter_mut() {
-						process.1.append_input(character)
+					for (_, process) in process::MAP.lock().iter_mut() {
+						if process.terminal == crate::io::buffer::active_term() {
+							process.append_input(character)
+						}
 					}
 
 					// let fg_pid = process::foreground_process();
@@ -57,6 +59,8 @@ fn parse_scan_code(scancode: u8) {
 					// 	.expect("foreground process not in hashmap")
 					// 	.append_input(character);
 				}
+				DecodedKey::RawKey(KeyCode::ArrowLeft) => crate::io::buffer::cycle_terms(1),
+				DecodedKey::RawKey(KeyCode::ArrowRight) => crate::io::buffer::cycle_terms(-1),
 				DecodedKey::RawKey(key) => serial_println!("{:?}", key),
 			}
 		}

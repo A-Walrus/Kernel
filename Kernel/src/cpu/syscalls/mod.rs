@@ -259,7 +259,14 @@ fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResul
 	if let Some(slice) = opt_slice {
 		let a = str::from_utf8(slice);
 		if let Ok(s) = a {
-			print!("{}", s);
+			let running = process::running_process();
+			let term = process::MAP
+				.lock()
+				.get(&running)
+				.expect("running process not in hashmap")
+				.terminal;
+
+			crate::io::buffer::print_on(s, term);
 			return Result(0);
 		} else {
 			serial_println!("Invalid UTF print");
@@ -302,7 +309,7 @@ fn sys_exec(ptr: u64, len: u64, argv: u64, argc: u64, _: u64, _: u64) -> Syscall
 				start += len;
 			}
 
-			let res = crate::process::add_process(s, &local_args);
+			let res = crate::process::add_process(s, &local_args, None);
 			match res {
 				Ok(pid) => Result(pid as u32 as i64),
 				Err(e) => {

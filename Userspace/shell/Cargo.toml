@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 standard = {path ="../standard"}
+logos={version="0.12", default-features=false,features = ["export_derive"]}
+

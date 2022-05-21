@@ -34,9 +34,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		println!("Welcome to GuyOS");
 
 		process::add_process("/bin/shell", &[]).expect("Failed to add process");
-		// process::add_process("/bin/b").expect("Failed to add process");
+		// process::add_process("/bin/pi", &["50000001"]).expect("Failed to add process");
+		// process::add_process("/bin/pi", &["5000000"]).expect("Failed to add process");
+		// process::add_process("/bin/b", &[]).expect("Failed to add process");
 
-		process::run_next_process();
+		process::start();
 	}
 	loop {} // to make the compiler happy
 }

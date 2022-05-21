@@ -1,11 +1,11 @@
-use crate::{println, serial_println};
+use crate::{cpu::syscalls::Registers, println, process, serial_println};
 use alloc::vec::Vec;
 use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
 use pic8259::ChainedPics;
 use spin::Mutex;
-use x86_64::structures::idt::PageFaultErrorCode;
+use x86_64::{structures::idt::PageFaultErrorCode, VirtAddr};
 
 /// Offset of the first pic in the chained pics
 pub const PIC_1_OFFSET: u8 = 32;
@@ -50,11 +50,124 @@ lazy_static! {
 
 		set_irq_handlers(&mut idt);
 
-		// register_callback(0,timer_interrupt_handler);
-		// register_callback(1,keyboard_interrupt_handler);
+		unsafe {
+			idt[(PIC_1_OFFSET + 0) as usize].set_handler_addr(VirtAddr::from_ptr(handle_timer as *const u8)).set_stack_index(1);
+			// idt[(PIC_1_OFFSET + 0) as usize].set_handler_fn(test_handler).set_stack_index(1);
+		}
 
 		Mutex::new(idt)
 	};
+}
+
+const QUANTA: usize = 5;
+
+/// count of ticks since starting current process
+pub static mut COUNTER: usize = 0;
+
+#[allow(dead_code)] // called from asm
+#[no_mangle] // called from asm
+extern "C" fn handle_timer_inner(registers_ptr: *mut Registers) -> *const u8 {
+	let count;
+	unsafe {
+		count = COUNTER;
+		COUNTER += 1;
+	};
+	unsafe {
+		PICS.lock().notify_end_of_interrupt(PIC_1_OFFSET + 0);
+	}
+	let running = unsafe { process::RUNNING };
+	if running && count >= QUANTA {
+		serial_println!("The clock's run out, time's up, over, blaow");
+
+		let registers: &mut Registers;
+		unsafe {
+			registers = &mut *registers_ptr;
+		}
+		let stack_frame_ptr = registers.scratch.rsp as *const InterruptStackFrame;
+		let stack_frame = unsafe { &*stack_frame_ptr };
+		registers.scratch.rsp = stack_frame.stack_pointer.as_u64();
+		let registers = *registers;
+		let instruction_pointer = stack_frame.instruction_pointer;
+		let rflags = stack_frame.cpu_flags;
+
+		// serial_println!("storing: {:?}", registers);
+		crate::process::context_switch(process::State::Timer {
+			registers,
+			instruction_pointer,
+			rflags,
+		});
+	} else {
+		return registers_ptr as *const _;
+	}
+}
+
+const STACK_SIZE: usize = 4096 * 8;
+static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+
+#[allow(dead_code)] // called from asm
+#[no_mangle] // called from asm
+extern "C" fn get_timer_stack_addr() -> *const u8 {
+	// Switch to kernel stack
+	let temp_stack: *const u8 = unsafe { STACK.as_ptr().add(STACK_SIZE) };
+	return temp_stack;
+}
+
+#[naked]
+extern "C" fn handle_timer() {
+	unsafe {
+		asm!(
+			// Push scratch registers
+			"
+			cli
+			push rsp
+			push rax
+			push rcx
+			push rdx
+			push rdi
+			push rsi
+			push r8
+			push r9
+			push r10
+			push r11",
+			// Push preserved registers
+			"
+			push rbx
+			push rbp
+			push r12
+			push r13
+			push r14
+			push r15
+			",
+			"mov rbx, rsp",              // C calling convention first variable
+			"call get_timer_stack_addr", // Hope rbx doesn't get destroyed...
+			"mov rsp, rax",
+			"mov rdi, rbx", // C calling convention first variable
+			"call handle_timer_inner",
+			"mov rsp, rax",
+			// Pop preserved registers
+			"
+			pop r15
+			pop r14
+			pop r13
+			pop r12
+			pop rbp
+			pop rbx",
+			// Pop scratch registers
+			"
+			pop r11
+			pop r10
+			pop r9
+			pop r8
+			pop rsi
+			pop rdi
+			pop rdx
+			pop rcx
+			pop rax
+			pop rsp",
+			"iretq",
+			options(noreturn)
+		);
+	}
 }
 
 /// Set up interrupt descriptor table, and chained pics
@@ -169,7 +282,7 @@ extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, e
 	serial_println!(" - Accessed Address: {:?}", Cr2::read());
 	serial_println!(" - Error Code: {:?}", error_code);
 	serial_println!(" - {:#?}", stack_frame);
-	try_recover("page fault", stack_frame);
+	loop {}
 }
 
 extern "x86-interrupt" fn x87_floating_point_handler(stack_frame: InterruptStackFrame) {
@@ -196,8 +309,20 @@ extern "x86-interrupt" fn security_exception_handler(stack_frame: InterruptStack
 }
 
 fn exception(string: &str, stack_frame: InterruptStackFrame) -> ! {
+	use crate::process;
+	use x86_64::{registers::segmentation::SegmentSelector, PrivilegeLevel};
 	serial_println!("EXCEPTION: {} \n - {:#?}", string, stack_frame);
-	try_recover(string, stack_frame)
+	let code_selector = SegmentSelector(stack_frame.code_segment as u16);
+	let from_userspace = code_selector.rpl() == PrivilegeLevel::Ring3;
+	if from_userspace {
+		serial_println!("From User");
+		process::remove_current_process();
+		loop {} // don't think this is reachable
+	} else {
+		serial_println!("From Kernel");
+		serial_println!("EXCEPTION: {} \n - {:#?}", string, stack_frame);
+		loop {}
+	}
 }
 
 fn exception_error(string: &str, stack_frame: InterruptStackFrame, error_code: u64) -> ! {
@@ -207,19 +332,5 @@ fn exception_error(string: &str, stack_frame: InterruptStackFrame, error_code: u
 		error_code,
 		stack_frame
 	);
-	try_recover(string, stack_frame)
-}
-
-fn try_recover(string: &str, stack_frame: InterruptStackFrame) -> ! {
-	println!("EXCEPTION: {}", string);
-	use crate::process;
-	use x86_64::{registers::segmentation::SegmentSelector, PrivilegeLevel};
-	let code_selector = SegmentSelector(stack_frame.code_segment as u16);
-	let from_userspace = code_selector.rpl() == PrivilegeLevel::Ring3;
-	if from_userspace {
-		process::remove_current_process();
-		loop {} // don't think this is reachable
-	} else {
-		loop {}
-	}
+	loop {}
 }

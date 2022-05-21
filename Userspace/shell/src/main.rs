@@ -13,26 +13,45 @@ pub extern "C" fn main() -> isize {
 	loop {
 		print!("GuyOS > ");
 		let input = read_line();
-		let mut split = input.split_ascii_whitespace();
-		match split.next() {
-			Some("exit") => {
+		match input.as_str() {
+			"exit" => {
 				break;
 			}
-			Some(exec_path) => {
-				let args: Vec<&str> = split.collect();
-				let mut path = "/bin/".to_string();
-				path.push_str(exec_path);
-				if file_exists(&path) {
-					let pid = exec(&path, &args);
-					match pid {
-						Ok(pid) => wait(pid),
-						_ => {}
+			"" => {}
+			command => match shell_words::split(command) {
+				Ok(v) => {
+					let mut tokens = v.as_slice();
+					let exec_path = &v[0];
+					let mut path = "/bin/".to_string();
+
+					tokens = &tokens[1..];
+
+					let should_wait = match tokens.last() {
+						Some(s) if s == "&" => {
+							tokens = &tokens[..tokens.len() - 1];
+							false
+						}
+						_ => true,
+					};
+
+					let args: Vec<&str> = tokens.iter().map(|s| s.as_str()).collect();
+					path.push_str(&exec_path);
+					if file_exists(&path) {
+						let pid = exec(&path, &args);
+						if should_wait {
+							match pid {
+								Ok(pid) => wait(pid),
+								_ => {}
+							}
+						}
+					} else {
+						println!("{} does not exist", path);
 					}
-				} else {
-					println!("{} does not exist", path);
 				}
-			}
-			None => {}
+				Err(e) => {
+					println!("Failed to parse command: {}", e)
+				}
+			},
 		}
 	}
 	return 0;

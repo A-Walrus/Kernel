@@ -5,14 +5,73 @@ use core::{fmt::Write, ops, slice};
 
 use alloc::vec::Vec;
 
+/// Currently active terminal
+static mut ACTIVE_TERM: usize = 0;
+
+/// Number of terminals
+pub const TERM_COUNT: usize = 3;
+
+/// get currently active terminal
+pub fn active_term() -> usize {
+	unsafe { ACTIVE_TERM }
+}
+
+fn screen_mut() -> &'static mut Screen<'static> {
+	unsafe { SCREEN.as_mut().unwrap() }
+}
+
+fn screen() -> &'static Screen<'static> {
+	unsafe { &SCREEN.as_ref().unwrap() }
+}
+
+/// cycle to next terminal
+pub fn cycle_terms(offset: isize) {
+	serial_println!("alt");
+	let new_active = (active_term() + (TERM_COUNT as isize - offset) as usize) % TERM_COUNT;
+	unsafe { ACTIVE_TERM = new_active };
+	match unsafe { &mut TERMINALS } {
+		Some(terminals) => terminals[new_active].redraw(),
+		_ => {}
+	};
+}
+
+/// print string on terminal
+pub fn print_on(s: &str, term: usize) {
+	unsafe {
+		match &mut TERMINALS {
+			Some(terminals) => {
+				// write!(terminals[term], s);
+				terminals[term].write(s);
+			}
+			None => {}
+		}
+	}
+}
+
 /// Public static terminal.
-pub static mut TERM: Option<Terminal> = None;
+pub static mut TERMINALS: Option<[Terminal; TERM_COUNT]> = None;
+/// Public static screen
+pub static mut SCREEN: Option<Screen> = None;
 
 /// Calculate the length of the framebuffer according to [FrameBufferInfo]. This value may be
 /// different from the [FrameBufferInfo::byte_len]
 pub fn calc_real_length(framebuffer: &FrameBuffer) -> usize {
 	let info = framebuffer.info();
 	info.bytes_per_pixel * info.stride * info.vertical_resolution
+}
+
+/// Setup screen and terminals
+pub fn setup(framebuffer: &mut FrameBuffer) {
+	let screen = Screen::new_from_framebuffer(framebuffer);
+	unsafe {
+		let mut id = 0;
+		TERMINALS = Some([(); TERM_COUNT].map(|_| {
+			let t = Terminal::new(&screen, id);
+			id += 1;
+			t
+		}));
+		SCREEN = Some(screen);
+	}
 }
 
 /// Pixel as represented in a framebuffer. Colors in a pixel are ordered BGR, with pixels being
@@ -184,9 +243,10 @@ impl Char {
 }
 
 /// A terminal with a screen, a cursor, and a grid of [Char]s.
-pub struct Terminal<'a> {
+#[derive(Clone)]
+pub struct Terminal {
 	/// The screen that this terminal controls.
-	screen: Screen<'a>,
+	// screen: Screen<'a>,
 	/// The current position of the cursor.
 	cursor_pos: usize,
 	/// Grid of characters with their styles, representing what's currently on screen.
@@ -197,26 +257,40 @@ pub struct Terminal<'a> {
 	height: usize,
 	/// Pixels of empty row for efficient clearing.
 	empty: Vec<Pixel>,
+	/// index
+	id: usize,
 }
 
-impl<'a> Terminal<'a> {
+impl Terminal {
 	/// The height of a single character in pixels.
 	const CHAR_HEIGHT: usize = 16;
 	/// The width of a single character in pixels.
 	const CHAR_WIDTH: usize = 8;
 
+	fn is_active(&self) -> bool {
+		self.id == active_term()
+	}
+
+	fn redraw(&mut self) {
+		for (i, char) in self.chars.iter().enumerate() {
+			self.draw_char(*char, i);
+		}
+		screen_mut().flush()
+	}
+
 	/// Create a new [Terminal] from a [Screen]. This takes ownership of the screen, as the
 	/// terminal is now the one responsible for it.
-	pub fn new(screen: Screen<'a>) -> Self {
+	pub fn new(screen: &Screen, id: usize) -> Self {
 		let width = screen.info.horizontal_resolution / Terminal::CHAR_WIDTH;
 		let height = screen.info.vertical_resolution / Terminal::CHAR_HEIGHT;
 		Self {
-			screen,
+			// screen,
 			width,
 			height,
 			cursor_pos: 0,
 			chars: vec![Char::new(' '); width * height],
 			empty: vec![Pixel::new(0, 0, 0); width * Terminal::CHAR_HEIGHT * Terminal::CHAR_WIDTH],
+			id,
 		}
 	}
 
@@ -249,7 +323,10 @@ impl<'a> Terminal<'a> {
 		let pixels_per_char_row = self.pixels_per_char_row();
 		let start = start_line * pixels_per_char_row;
 		let end = (end_line + 1) * pixels_per_char_row;
-		self.screen.front[start..end].copy_from_slice(&self.screen.back[start..end]);
+
+		if self.is_active() {
+			screen_mut().front[start..end].copy_from_slice(&screen().back[start..end]);
+		}
 	}
 
 	/// Move cursor to beginning of line.
@@ -309,12 +386,14 @@ impl<'a> Terminal<'a> {
 
 		let pixels_per_char_row = self.pixels_per_char_row();
 
-		self.screen.back.copy_within(pixels_per_char_row.., 0);
+		if self.is_active() {
+			screen_mut().back.copy_within(pixels_per_char_row.., 0);
 
-		let len = self.screen.back.len();
-		self.screen.back[len - pixels_per_char_row..].clone_from_slice(&self.empty);
+			let len = screen().back.len();
+			screen_mut().back[len - pixels_per_char_row..].clone_from_slice(&self.empty);
 
-		self.screen.flush();
+			screen_mut().flush();
+		}
 	}
 
 	fn index_to_pixel(&self, index: usize) -> PixelPos {
@@ -325,7 +404,7 @@ impl<'a> Terminal<'a> {
 
 	/// Draw a character at a certain position. This writes pixels to the back buffer. In order to
 	/// see changes on screen you must flush the screen.
-	fn draw_char(&mut self, character: Char, pos: usize) {
+	fn draw_char(&self, character: Char, pos: usize) {
 		const MASK: [u8; 8] = [128, 64, 32, 16, 8, 4, 2, 1];
 		let mut pos = self.index_to_pixel(pos);
 		if character.character.is_ascii() {
@@ -338,7 +417,9 @@ impl<'a> Terminal<'a> {
 					} else {
 						Pixel::new(0, 0, 0)
 					};
-					self.screen.put_pixel(color, &pos);
+					if self.is_active() {
+						screen_mut().put_pixel(color, &pos);
+					}
 					pos.x += 1;
 				}
 				pos.x -= Terminal::CHAR_WIDTH;
@@ -348,7 +429,7 @@ impl<'a> Terminal<'a> {
 	}
 }
 
-impl<'a> Write for Terminal<'a> {
+impl Write for Terminal {
 	fn write_str(&mut self, s: &str) -> core::fmt::Result {
 		self.write(s);
 		Ok(())
@@ -361,10 +442,11 @@ macro_rules! print {
 	($($arg:tt)*) => {
         #[allow(unused_unsafe)]
 		unsafe {
-			match &mut $crate::io::buffer::TERM {
-				Some(term) => {
+			match &mut $crate::io::buffer::TERMINALS {
+				Some(terminals) => {
 					use core::fmt::Write;
-					write!(term, $($arg)*).unwrap();
+
+					write!(terminals[$crate::io::buffer::active_term()], $($arg)*).unwrap();
 				}
 				None => {}
 			}

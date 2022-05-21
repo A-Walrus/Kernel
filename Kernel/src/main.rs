@@ -25,15 +25,19 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		interrupts::setup();
 		syscalls::setup();
 		keyboard::setup();
-		let screen = buffer::Screen::new_from_framebuffer(framebuffer);
-		let term = buffer::Terminal::new(screen);
-		unsafe {
-			buffer::TERM = Some(term);
-		}
-		ext2::setup().expect("Failed to setup EXT2");
-		println!("Welcome to GuyOS");
 
-		process::add_process("/bin/shell", &[]).expect("Failed to add process");
+		// unsafe {
+		// buffer::SCREEN = Some(screen);
+		// buffer::TERM = Some(term);
+		// }
+		buffer::setup(framebuffer);
+
+		ext2::setup().expect("Failed to setup EXT2");
+
+		for i in 0..buffer::TERM_COUNT {
+			let s = alloc::format!("{}", i);
+			process::add_process("/bin/shell", &[&s], Some(i)).expect("Failed to add process");
+		}
 		// process::add_process("/bin/pi", &["50000001"]).expect("Failed to add process");
 		// process::add_process("/bin/pi", &["5000000"]).expect("Failed to add process");
 		// process::add_process("/bin/b", &[]).expect("Failed to add process");

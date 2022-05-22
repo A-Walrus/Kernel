@@ -46,7 +46,7 @@ pub mod process;
 use core::panic::PanicInfo;
 
 /// End the os
-pub fn end() {
+pub fn end() -> ! {
 	fs::ext2::cleanup().expect("Failed to cleanup EXT2");
 	serial_println!("Finished cleanup");
 

@@ -329,7 +329,6 @@ fn try_recover(string: &str, stack_frame: InterruptStackFrame) -> ! {
 	let from_userspace = code_selector.rpl() == PrivilegeLevel::Ring3;
 	if from_userspace {
 		process::remove_current_process();
-		loop {} // don't think this is reachable
 	} else {
 		loop {}
 	}

@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::{string::ToString, vec::Vec};
 use standard::{
 	get_args, print, println,
-	syscalls::{exec, file_exists, read_line, wait},
+	syscalls::{exec, file_exists, quit, read_line, wait},
 };
 
 #[no_mangle]
@@ -19,6 +19,9 @@ pub extern "C" fn main() -> isize {
 		match input.as_str() {
 			"exit" => {
 				break;
+			}
+			"quit" => {
+				quit();
 			}
 			"" => {}
 			command => match shell_words::split(command) {

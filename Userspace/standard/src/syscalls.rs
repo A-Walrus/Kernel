@@ -130,6 +130,14 @@ pub fn write(buffer: &[u8], handle: Handle) -> i64 {
 	unsafe { syscall3(8, buffer.as_ptr() as usize, buffer.len(), handle as usize) }
 }
 
+pub fn quit() -> ! {
+	unsafe {
+		syscall0(11);
+	}
+	// This is unreachable but makes compiler happy
+	loop {}
+}
+
 pub struct Dir(Handle);
 impl Dir {
 	pub fn open(path: &str) -> Result<Self, ()> {

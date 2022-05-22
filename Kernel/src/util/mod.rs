@@ -10,11 +10,12 @@ pub mod qemu {
 	// }
 
 	/// exit QEMU
-	pub fn exit() {
+	pub fn exit() -> ! {
 		use x86_64::instructions::port::Port;
 		unsafe {
 			let mut port = Port::new(0xf4);
 			port.write(0x10 as u32);
 		}
+		loop {} // this shouldn't be reached, because the last command shutds down computer, but it proves to the compiler I never return
 	}
 }

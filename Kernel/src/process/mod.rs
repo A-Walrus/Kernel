@@ -403,7 +403,7 @@ pub fn run_next_process() -> ! {
 }
 
 /// Remvoe the currently running process
-pub fn remove_current_process() {
+pub fn remove_current_process() -> ! {
 	{
 		let mut lock = QUEUE.lock();
 		let removing_pid = lock.pop_front().expect("No processes");

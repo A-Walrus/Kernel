@@ -17,4 +17,6 @@ members = [
   "loop",
   "pi",
   "count",
+  "rmdir",
+  "rm",
 ]

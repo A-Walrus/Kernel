@@ -795,7 +795,7 @@ pub fn rmdir(path: &str) -> Result<(), Ext2Err> {
 
 	unlink_inode(inode)?;
 	unlink_inode(parent_inode)?;
-	unlink(path)?;
+	unlink(path, true)?;
 	Ok(())
 }
 
@@ -827,8 +827,19 @@ fn unlink_inode(inode: Inode) -> Result<(), Ext2Err> {
 
 /// Unlink a file, also called removing. If there are multiple hard links to the file, the
 /// other links will continue to be able to access it
-pub fn unlink(path: &str) -> Result<(), Ext2Err> {
+pub fn unlink(path: &str, allow: bool) -> Result<(), Ext2Err> {
 	let inode = path_to_inode(path)?;
+	let allowed = allow
+		|| get_ext!()
+			.lock()
+			.get_inode_data(inode)
+			.type_and_permissions
+			.inode_type()
+			== Type::RegularFile;
+
+	if !allowed {
+		return Err(Ext2Err::NotAFile);
+	}
 	unlink_inode(inode)?;
 
 	let index = path.rfind(SEPARATOR).unwrap();

@@ -138,6 +138,24 @@ pub fn quit() -> ! {
 	loop {}
 }
 
+pub fn rmdir(path: &str) -> Result<(), ()> {
+	let res = unsafe { syscall2(13, path.as_ptr() as usize, path.len()) };
+	if res < 0 {
+		Err(())
+	} else {
+		Ok(())
+	}
+}
+
+pub fn unlink(path: &str) -> Result<(), ()> {
+	let res = unsafe { syscall2(12, path.as_ptr() as usize, path.len()) };
+	if res < 0 {
+		Err(())
+	} else {
+		Ok(())
+	}
+}
+
 pub struct Dir(Handle);
 impl Dir {
 	pub fn open(path: &str) -> Result<Self, ()> {

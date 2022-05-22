@@ -47,7 +47,7 @@ pub enum SyscallResult {
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 12] = [
+const SYSCALLS: [Syscall; 14] = [
 	sys_debug,
 	sys_print,
 	sys_exit,
@@ -60,7 +60,57 @@ const SYSCALLS: [Syscall; 12] = [
 	sys_open_dir,
 	sys_wait,
 	sys_quit,
+	sys_rm,
+	sys_rmdir,
 ];
+
+fn sys_rm(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let ptr = ptr as *const u8;
+	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+
+	if let Some(slice) = opt_slice {
+		let a = str::from_utf8(slice);
+		if let Ok(path) = a {
+			match crate::fs::ext2::unlink(path, false) {
+				Ok(_) => Result(0),
+				Err(_) => Result(-1),
+			}
+		} else {
+			Result(-1)
+		}
+	} else {
+		Result(-1)
+	}
+}
+
+fn sys_rmdir(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let ptr = ptr as *const u8;
+	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+
+	if let Some(slice) = opt_slice {
+		let a = str::from_utf8(slice);
+		if let Ok(path) = a {
+			match crate::fs::ext2::rmdir(path) {
+				Ok(_) => Result(0),
+				Err(_) => Result(-1),
+			}
+		} else {
+			Result(-1)
+		}
+	} else {
+		Result(-1)
+	}
+}
 
 fn sys_quit(_: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	crate::end();

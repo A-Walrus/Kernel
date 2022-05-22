@@ -17,14 +17,14 @@ pub extern "C" fn main() -> isize {
 	let a: usize = match args.get(0).map(|s| s.parse()) {
 		Some(Ok(num)) => num,
 		_ => {
-			println!("Arguement must be a number!");
+			println!("Arguement must be a (positive) number!");
 			return -1;
 		}
 	};
 	let b: usize = match args.get(1).map(|s| s.parse()) {
 		Some(Ok(num)) => num,
 		_ => {
-			println!("Arguement must be a number!");
+			println!("Arguement must be a (positive) number!");
 			return -1;
 		}
 	};

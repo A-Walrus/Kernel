@@ -3,10 +3,11 @@
 #![feature(asm)]
 
 extern crate alloc;
-use standard::{get_args, println};
+#[allow(unused_imports)]
+use standard;
 
 #[no_mangle]
 pub extern "C" fn main() -> isize {
 	loop {}
-	return 0;
+	// return 0;
 }

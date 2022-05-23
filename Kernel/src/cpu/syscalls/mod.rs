@@ -7,7 +7,7 @@ use core::{
 
 use crate::{
 	cpu::gdt::GDT,
-	print, process,
+	process,
 	process::{Handle, Pid},
 	serial_print, serial_println,
 };
@@ -417,8 +417,6 @@ fn sys_exit(status: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResul
 	let status = status as i64;
 	serial_println!("Process exited with status: {}", status);
 	process::remove_current_process();
-
-	Result(0) // I think this doesn't matter
 }
 
 fn sys_debug(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult {

@@ -10,7 +10,7 @@ use kernel::{
 	fs::ext2,
 	io::{buffer, keyboard},
 	mem::{buddy, heap, paging},
-	println, process,
+	process,
 };
 
 entry_point!(kernel_main);

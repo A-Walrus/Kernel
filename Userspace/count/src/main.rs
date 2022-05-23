@@ -3,7 +3,8 @@
 #![feature(asm)]
 
 extern crate alloc;
-use standard::{get_args, println};
+#[allow(unused_imports)]
+use standard::{syscalls::*, *};
 
 #[no_mangle]
 pub extern "C" fn main() -> isize {

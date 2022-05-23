@@ -2,7 +2,7 @@ use crate::{
 	cpu::syscalls::{self, OpenFlags, Registers},
 	fs::ext2::{Directory, Entry, Ext2Err, File},
 	mem::paging::{self, UserPageTable},
-	util::io::{IOError, Read, Seek, Write},
+	util::io::{IOError, Read, Write},
 };
 use alloc::{
 	collections::VecDeque,

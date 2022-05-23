@@ -4,7 +4,7 @@
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
-use standard::{io::Read, print, println, syscalls::File};
+use standard::{io::*, syscalls::*, *};
 
 use core::{fmt, ops};
 

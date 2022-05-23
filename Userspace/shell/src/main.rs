@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::{string::ToString, vec::Vec};
 use standard::{
 	get_args, print, println,
-	syscalls::{exec, file_exists, quit, read_line, wait},
+	syscalls::{exec, file_exists, kill, quit, read_line, wait},
 };
 
 #[no_mangle]
@@ -23,6 +23,13 @@ pub extern "C" fn main() -> isize {
 			"quit" => {
 				quit();
 			}
+			s if s.starts_with("kill") => match s.split_whitespace().nth(1) {
+				None => println!("Requires extra arguement: pid"),
+				Some(s) => match s.parse() {
+					Ok(pid) => kill(pid),
+					Err(_) => println!("Pid must be a number!"),
+				},
+			},
 			"" => {}
 			command => match shell_words::split(command) {
 				Ok(v) => {
@@ -46,7 +53,10 @@ pub extern "C" fn main() -> isize {
 						let pid = exec(&path, &args);
 						if should_wait {
 							match pid {
-								Ok(pid) => wait(pid),
+								Ok(pid) => {
+									// println!("{}", pid);
+									wait(pid)
+								}
 								_ => {}
 							}
 						}

@@ -33,6 +33,11 @@ pub fn exit(status: isize) -> ! {
 	// This is unreachable but makes compiler happy
 	loop {}
 }
+pub fn kill(pid: Pid) {
+	unsafe {
+		syscall1(14, pid as usize);
+	}
+}
 
 type Pid = usize;
 

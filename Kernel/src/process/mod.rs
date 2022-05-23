@@ -386,6 +386,7 @@ pub fn run_next_process() -> ! {
 		for _ in 0..len {
 			let pid = QUEUE.lock()[0];
 			let mut lock = MAP.lock();
+			// serial_print!("{} ", pid);
 			let process = lock.get_mut(&pid).expect("process from queue not in hashmap");
 			if process.block_state.ready() {
 				unsafe {
@@ -404,45 +405,42 @@ pub fn run_next_process() -> ! {
 
 /// Remvoe the currently running process
 pub fn remove_current_process() -> ! {
-	{
-		let mut lock = QUEUE.lock();
-		let removing_pid = lock.pop_front().expect("No processes");
-
-		let mut lock = MAP.lock();
-		let prev_value = lock.remove(&removing_pid);
-		assert!(prev_value.is_some());
-		for pid in prev_value.unwrap().waiting_processes {
-			let process = lock.get_mut(&pid).unwrap();
-			match &mut process.block_state {
-				BlockState::Blocked {
-					still,
-					data: BlockData::Wait(waiting_pid),
-				} if *waiting_pid == removing_pid => {
-					*still = false;
-				}
-				_ => {}
-			}
-			serial_println!("{:?}", process.block_state);
-		}
-
-		if lock.is_empty() {
-			crate::end();
-		}
-	}
+	let removing_pid: Pid = *QUEUE.lock().front().expect("No processes");
+	remove_process(removing_pid);
 
 	run_next_process();
 }
 
 /// Remove a process from running
-// pub fn remove_process(pid: Pid) {
-// let prev_value = MAP.lock().remove(&pid);
-// assert!(prev_value.is_some());
+pub fn remove_process(removing_pid: Pid) {
+	let mut queue = QUEUE.lock();
+	if let Some((index, _)) = queue.iter().enumerate().find(|(_, p)| **p == removing_pid) {
+		queue.remove(index);
+		{
+			let mut lock = MAP.lock();
+			let prev_value = lock.remove(&removing_pid);
+			assert!(prev_value.is_some());
+			for pid in prev_value.unwrap().waiting_processes {
+				let process = lock.get_mut(&pid).unwrap();
+				match &mut process.block_state {
+					BlockState::Blocked {
+						still,
+						data: BlockData::Wait(waiting_pid),
+					} if *waiting_pid == removing_pid => {
+						*still = false;
+					}
+					_ => {}
+				}
+			}
 
-// let mut lock = QUEUE.lock();
-// let index = lock.iter().position(|x| *x == pid).unwrap();
-// let prev_value = lock.remove(index);
-// assert!(prev_value.is_some());
-// }
+			if lock.is_empty() {
+				crate::end();
+			}
+		}
+	} else {
+		serial_println!("fuck");
+	}
+}
 
 fn cycle() {
 	{

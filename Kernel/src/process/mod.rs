@@ -315,6 +315,8 @@ impl PCB {
 				}
 			}
 			State::Syscall { registers } => {
+				// serial_println!("restoring {:?}", registers);
+
 				if let BlockState::Blocked {
 					still: false,
 					data: BlockData::Input { slice },
@@ -331,45 +333,75 @@ impl PCB {
 					buffer.drain(0..amount_to_take);
 				}
 
-				// address to temporarily store rax while fixing the stack.
-				let addr = registers.scratch.rsp - 0x08;
-
 				unsafe {
+					let start_addr: *const Registers = &registers;
 					asm!(
-						"mov rbp, {rbp}",
-						"mov rbx, {rbx}",
-						rbp = in(reg) registers.preserved.rbp,
-						rbx = in(reg) registers.preserved.rbx,
-						// TODO figure out if i need to say I'm changing rbp
-					);
-					asm!("mov QWORD PTR [{addr}],rax",
-						addr = in(reg) addr,
-						in("rax") registers.scratch.rax);
-
-					asm!(
-						"",
-						in("r12") registers.preserved.r12,
-						in("r13") registers.preserved.r13,
-						in("r14") registers.preserved.r14,
-						in("r15") registers.preserved.r15,
-						in("r11") registers.scratch.r11,
-						in("r10") registers.scratch.r10,
-						in("r9") registers.scratch.r9,
-						in("r8") registers.scratch.r8,
-						in("rsi") registers.scratch.rsi,
-						in("rdi") registers.scratch.rdi,
-						in("rdx") registers.scratch.rdx,
-						in("rcx") registers.scratch.rcx,
-					);
-					asm!(
-						"push rax",
-						"pop rsp",
-						"mov rax, QWORD PTR [rsp-0x08]", // rax from when it was pushed before
-						"sysretq",
-						in("rax") registers.scratch.rsp,
-						options(noreturn)
-					);
+					"mov rsp, {addr}",
+					// Pop preserved registers
+					"
+					pop r15
+					pop r14
+					pop r13
+					pop r12
+					pop rbp
+					pop rbx",
+					// Pop scratch registers
+					"
+					pop r11
+					pop r10
+					pop r9
+					pop r8
+					pop rsi
+					pop rdi
+					pop rdx
+					pop rcx
+					pop rax
+					pop rsp",
+					"sysretq",
+					addr = in(reg) start_addr,
+					options(noreturn)
+						);
 				}
+
+				// // address to temporarily store rax while fixing the stack.
+				// let addr = registers.scratch.rsp - 0x08;
+
+				// unsafe {
+				// 	asm!(
+				// 		"mov rbp, {rbp}",
+				// 		"mov rbx, {rbx}",
+				// 		rbp = in(reg) registers.preserved.rbp,
+				// 		rbx = in(reg) registers.preserved.rbx,
+				// 		// TODO figure out if i need to say I'm changing rbp
+				// 	);
+				// 	asm!("mov QWORD PTR [{addr}],rax",
+				// 		addr = in(reg) addr,
+				// 		in("rax") registers.scratch.rax);
+
+				// 	asm!(
+				// 		"",
+				// 		in("r12") registers.preserved.r12,
+				// 		in("r13") registers.preserved.r13,
+				// 		in("r14") registers.preserved.r14,
+				// 		in("r15") registers.preserved.r15,
+				// 		in("r11") registers.scratch.r11,
+				// 		in("r10") registers.scratch.r10,
+				// 		in("r9") registers.scratch.r9,
+				// 		in("r8") registers.scratch.r8,
+				// 		in("rsi") registers.scratch.rsi,
+				// 		in("rdi") registers.scratch.rdi,
+				// 		in("rdx") registers.scratch.rdx,
+				// 		in("rcx") registers.scratch.rcx,
+				// 	);
+				// 	asm!(
+				// 		"push rax",
+				// 		"pop rsp",
+				// 		"mov rax, QWORD PTR [rsp-0x08]", // rax from when it was pushed before
+				// 		"sysretq",
+				// 		in("rax") registers.scratch.rsp,
+				// 		options(noreturn)
+				// 	);
+				// }
 			}
 		}
 	}

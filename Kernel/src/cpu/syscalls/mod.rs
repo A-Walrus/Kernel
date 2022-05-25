@@ -627,7 +627,7 @@ pub fn setup() {
 }
 
 /// Go to ring 3 with given code and stack addresses
-pub unsafe fn go_to_ring3(code: VirtAddr, stack_end: VirtAddr, arg0: usize, arg1: usize) {
+pub unsafe fn go_to_ring3(code: VirtAddr, stack_end: VirtAddr, arg0: usize, arg1: usize) -> ! {
 	let cs_idx: u16 = GDT.1.user_code_selector.0;
 	let ds_idx: u16 = GDT.1.user_data_selector.0;
 	// serial_println!("{:?}, {:?}", cs_idx, ds_idx);

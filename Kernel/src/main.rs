@@ -26,10 +26,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		syscalls::setup();
 		keyboard::setup();
 
-		// unsafe {
-		// buffer::SCREEN = Some(screen);
-		// buffer::TERM = Some(term);
-		// }
 		buffer::setup(framebuffer);
 
 		ext2::setup().expect("Failed to setup EXT2");

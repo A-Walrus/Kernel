@@ -6,3 +6,6 @@ pub mod interrupts;
 
 /// System calls
 pub mod syscalls;
+
+/// Programmable Interval Timer
+pub mod pit;

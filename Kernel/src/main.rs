@@ -6,11 +6,11 @@
 extern crate alloc;
 use bootloader::{entry_point, BootInfo};
 use kernel::{
-	cpu::{gdt, interrupts, syscalls},
+	cpu::{gdt, interrupts, pit, syscalls},
 	fs::ext2,
 	io::{buffer, keyboard},
 	mem::{buddy, heap, paging},
-	process, util,
+	process,
 };
 
 entry_point!(kernel_main);
@@ -24,11 +24,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		heap::setup(buffer::calc_real_length(framebuffer));
 		interrupts::setup();
 		syscalls::setup();
+		pit::setup_time();
 		keyboard::setup();
-		util::setup();
 		buffer::setup(framebuffer);
 
 		ext2::setup().expect("Failed to setup EXT2");
+
+		pit::play_startup_song();
 
 		for i in 0..buffer::TERM_COUNT {
 			let s = alloc::format!("{}", i);
@@ -41,5 +43,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
 		process::start();
 	}
-	loop {} // to make the compiler happy
+	// kernel::end();
+	loop {}
 }

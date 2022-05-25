@@ -45,14 +45,25 @@ pub mod process;
 
 use core::panic::PanicInfo;
 
+const SOUND_ENABLE: bool = false;
+
 /// End the os
 pub fn end() -> ! {
 	fs::ext2::cleanup().expect("Failed to cleanup EXT2");
+
+	unsafe {
+		process::RUNNING = false;
+	}
+	x86_64::instructions::interrupts::enable();
+
+	cpu::pit::play_shutdown_song();
+
 	serial_println!("Finished cleanup");
 
 	serial_println!("The end");
 
 	println!("Shutting down...");
+
 	util::qemu::exit();
 }
 

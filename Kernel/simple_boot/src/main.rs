@@ -19,6 +19,17 @@ const RUN_ARGS: &[&str] = &[
 	"stdio",
 	"-drive",
 	"format=raw,file=../disk.img",
+	"-audiodev",
+	"pa,id=audio0",
+	// "-soundhw",
+	// "pcspk",
+	"-machine",
+	"pcspk-audiodev=audio0",
+	// device intel-hda -device hda-duplex
+	// "-device",
+	// "intel-hda",
+	// "-device",
+	// "hda-duplex",
 	"-m",
 	"128M",
 ];

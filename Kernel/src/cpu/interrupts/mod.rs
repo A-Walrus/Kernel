@@ -5,14 +5,25 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
 use pic8259::ChainedPics;
 use spin::Mutex;
-use x86_64::{structures::idt::PageFaultErrorCode, VirtAddr};
+use x86_64::{instructions::port::*, structures::idt::PageFaultErrorCode, VirtAddr};
 
 /// Offset of the first pic in the chained pics
 pub const PIC_1_OFFSET: u8 = 32;
 /// Offset of the second pic in the chained pics
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 
+/// number of IRQs
 const IRQS: usize = 16;
+
+const CHANNEL_0: u16 = 0x40; // Read/Write
+							 // const CHANNEL_1: u16 = 0x41; // Read/Write
+							 // const CHANNEL_2: u16 = 0x42; // Read/Write
+const MODE_COMMAND: u16 = 0x43; // Write
+
+const PIT_BASE_FREQ: u64 = 1193182;
+/// Milliseconds per PIT
+pub const TIMER_NANOS: u64 = 50_000_000;
+const QUANTA: usize = 1;
 
 /// Mutex wrapping chained pics. This is the interface for communicating with the pics.
 pub static PICS: spin::Mutex<ChainedPics> = spin::Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
@@ -59,24 +70,32 @@ lazy_static! {
 	};
 }
 
-const QUANTA: usize = 5;
+/// count of pits since starting current process
+pub static mut PROC_COUNTER: usize = 0;
 
-/// count of ticks since starting current process
-pub static mut COUNTER: usize = 0;
+/// total count of pits
+static mut PIT_COUNTER: usize = 0;
+
+/// get total count of PIT interrupts
+#[inline(never)]
+pub fn get_pit_count() -> usize {
+	unsafe { PIT_COUNTER }
+}
 
 #[allow(dead_code)] // called from asm
 #[no_mangle] // called from asm
 extern "C" fn handle_timer_inner(registers_ptr: *mut Registers) -> *const u8 {
-	let count;
+	let proc_count;
 	unsafe {
-		count = COUNTER;
-		COUNTER += 1;
+		proc_count = PROC_COUNTER;
+		PROC_COUNTER += 1;
+		PIT_COUNTER += 1;
 	};
 	unsafe {
 		PICS.lock().notify_end_of_interrupt(PIC_1_OFFSET + 0);
 	}
 	let running = unsafe { process::RUNNING };
-	if running && count >= QUANTA {
+	if running && proc_count >= QUANTA {
 		serial_println!("The clock's run out, time's up, over, blaow");
 
 		let registers: &mut Registers;
@@ -170,6 +189,20 @@ extern "C" fn handle_timer() {
 	}
 }
 
+fn setup_pit() {
+	let freq_hz = 1_000_000_000 / TIMER_NANOS;
+	println!("{}", freq_hz);
+	let divisor = (PIT_BASE_FREQ / freq_hz) as u16;
+
+	let mut data: PortGeneric<u8, ReadWriteAccess> = Port::new(CHANNEL_0);
+	let mut command: PortGeneric<u8, ReadWriteAccess> = Port::new(MODE_COMMAND);
+	unsafe {
+		command.write(0x36);
+		data.write((divisor & 0xff) as u8);
+		data.write(((divisor >> 8) & 0xff) as u8);
+	}
+}
+
 /// Set up interrupt descriptor table, and chained pics
 pub fn setup() {
 	unsafe {
@@ -182,6 +215,8 @@ pub fn setup() {
 		const MASK: u8 = 0b1111_1000;
 		pics.write_masks(MASK, MASK);
 	};
+	setup_pit();
+
 	x86_64::instructions::interrupts::enable();
 }
 

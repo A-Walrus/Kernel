@@ -10,7 +10,7 @@ use kernel::{
 	fs::ext2,
 	io::{buffer, keyboard},
 	mem::{buddy, heap, paging},
-	process,
+	process, util,
 };
 
 entry_point!(kernel_main);
@@ -25,7 +25,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 		interrupts::setup();
 		syscalls::setup();
 		keyboard::setup();
-
+		util::setup();
 		buffer::setup(framebuffer);
 
 		ext2::setup().expect("Failed to setup EXT2");
@@ -34,6 +34,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 			let s = alloc::format!("{}", i);
 			process::add_process("/bin/shell", &[&s], Some(i)).expect("Failed to add process");
 		}
+
 		// process::add_process("/bin/pi", &["50000001"]).expect("Failed to add process");
 		// process::add_process("/bin/pi", &["5000000"]).expect("Failed to add process");
 		// process::add_process("/bin/b", &[]).expect("Failed to add process");

@@ -649,5 +649,6 @@ pub unsafe fn go_to_ring3(code: VirtAddr, stack_end: VirtAddr, arg0: usize, arg1
 	in("rsi") stack_end.as_u64(),
 	in("dx") cs_idx,
 	in("ax") ds_idx,
+	options(noreturn),
 	);
 }

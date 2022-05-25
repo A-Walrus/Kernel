@@ -2,13 +2,17 @@ use crate::{
 	cpu::syscalls::{self, OpenFlags, Registers},
 	fs::ext2::{Directory, Entry, Ext2Err, File},
 	mem::paging::{self, UserPageTable},
-	util::io::{IOError, Read, Write},
+	util::{
+		get_time,
+		io::{IOError, Read, Write},
+	},
 };
 use alloc::{
 	collections::VecDeque,
 	string::String,
 	vec::{IntoIter, Vec},
 };
+use core::time::Duration;
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -201,6 +205,7 @@ pub struct PCB {
 	waiting_processes: Vec<Pid>,
 	/// Terminal this process prints to
 	pub terminal: usize,
+	start_time: Duration,
 }
 
 /// Get process in foreground
@@ -246,7 +251,7 @@ impl PCB {
 	fn run_proc(&mut self) {
 		unsafe {
 			RUNNING = true;
-			crate::cpu::interrupts::COUNTER = 0;
+			crate::cpu::interrupts::PROC_COUNTER = 0;
 		};
 
 		// Switch to process page table
@@ -452,7 +457,12 @@ pub fn remove_process(removing_pid: Pid) {
 			let mut lock = MAP.lock();
 			let prev_value = lock.remove(&removing_pid);
 			assert!(prev_value.is_some());
-			for pid in prev_value.unwrap().waiting_processes {
+			let pcb = prev_value.unwrap();
+			let time = get_time();
+
+			serial_println!("Process lasted: {:?}", time - pcb.start_time);
+
+			for pid in pcb.waiting_processes {
 				let process = lock.get_mut(&pid).unwrap();
 				match &mut process.block_state {
 					BlockState::Blocked {
@@ -529,6 +539,7 @@ fn create_process(executable_path: &str, args: &[&str], term: Option<usize>) -> 
 		block_state: BlockState::Ready,
 		open_files: OpenFiles::new(),
 		waiting_processes: Vec::new(),
+		start_time: get_time(),
 		page_table,
 		terminal,
 	})

@@ -1,11 +1,11 @@
 use crate::{
-	cpu::syscalls::{self, OpenFlags, Registers},
+	cpu::{
+		pit::get_time,
+		syscalls::{self, OpenFlags, Registers},
+	},
 	fs::ext2::{Directory, Entry, Ext2Err, File},
 	mem::paging::{self, UserPageTable},
-	util::{
-		get_time,
-		io::{IOError, Read, Write},
-	},
+	util::io::{IOError, Read, Write},
 };
 use alloc::{
 	collections::VecDeque,
@@ -251,7 +251,7 @@ impl PCB {
 	fn run_proc(&mut self) {
 		unsafe {
 			RUNNING = true;
-			crate::cpu::interrupts::PROC_COUNTER = 0;
+			crate::cpu::pit::PROC_COUNTER = 0;
 		};
 
 		// Switch to process page table

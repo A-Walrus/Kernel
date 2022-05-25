@@ -45,19 +45,7 @@ pub mod process;
 
 use core::panic::PanicInfo;
 
-/// play shutdown song
-pub fn play_shutdown_song() {
-	use core::time::Duration;
-	use util::play_note;
-	let eigth_note = Duration::from_millis(375);
-	let quarter_note = eigth_note * 2;
-
-	// shutdown
-	play_note(831, eigth_note);
-	play_note(623, eigth_note);
-	play_note(415, eigth_note);
-	play_note(467, quarter_note);
-}
+const SOUND_ENABLE: bool = true;
 
 /// End the os
 pub fn end() -> ! {
@@ -67,7 +55,8 @@ pub fn end() -> ! {
 		process::RUNNING = false;
 	}
 	x86_64::instructions::interrupts::enable();
-	play_shutdown_song();
+
+	cpu::pit::play_shutdown_song();
 
 	serial_println!("Finished cleanup");
 

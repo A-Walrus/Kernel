@@ -1,4 +1,4 @@
-use crate::cpu::interrupts::get_pit_count;
+use crate::cpu::interrupts::{get_pit_count, TIMER_NANOS};
 use x86_64::instructions::hlt;
 
 /// Module for IO, similair to std::io, which is not available in a no-std project
@@ -48,13 +48,31 @@ impl Into<Duration> for Ticks {
 	}
 }
 
+/// Play a note of a certain frequency for a certain duration
+pub fn play_note(hz: u64, duration: Duration) {
+	crate::cpu::interrupts::start_sound();
+	crate::cpu::interrupts::set_freq(hz);
+	crate::util::wait(duration);
+	crate::cpu::interrupts::stop_sound();
+}
+
 use core::ops::*;
 
 use core::time::Duration;
 
 static mut TICKS_PER_NANOSEC: u64 = 0;
 
-fn wait_for_pit() {
+/// wait a duration
+pub fn wait(duration: Duration) {
+	let nanos = duration.as_nanos();
+	let times = nanos / TIMER_NANOS as u128;
+	for _ in 0..times {
+		wait_for_pit()
+	}
+}
+
+/// wait for timer interrupt
+pub fn wait_for_pit() {
 	let start_count = get_pit_count();
 	while get_pit_count() == start_count {
 		hlt();

@@ -16,9 +16,9 @@ pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 const IRQS: usize = 16;
 
 const CHANNEL_0: u16 = 0x40; // Read/Write
-							 // const CHANNEL_1: u16 = 0x41; // Read/Write
-							 // const CHANNEL_2: u16 = 0x42; // Read/Write
+const CHANNEL_2: u16 = 0x42; // Read/Write
 const MODE_COMMAND: u16 = 0x43; // Write
+const PORT: u16 = 0x61; // Read/Write
 
 const PIT_BASE_FREQ: u64 = 1193182;
 /// Milliseconds per PIT
@@ -186,6 +186,41 @@ extern "C" fn handle_timer() {
 			"iretq",
 			options(noreturn)
 		);
+	}
+}
+
+/// set timer frequency
+pub fn set_freq(hz: u64) {
+	let divisor = (PIT_BASE_FREQ / hz) as u16;
+
+	let mut data: PortGeneric<u8, ReadWriteAccess> = Port::new(CHANNEL_2);
+	let mut command: PortGeneric<u8, ReadWriteAccess> = Port::new(MODE_COMMAND);
+	unsafe {
+		command.write(0xb6);
+		data.write((divisor & 0xff) as u8);
+		data.write(((divisor >> 8) & 0xff) as u8);
+	}
+}
+
+/// start sound
+pub fn start_sound() {
+	let mut port: PortGeneric<u8, ReadWriteAccess> = Port::new(PORT);
+	unsafe {
+		let temp = port.read();
+		if temp != temp | 3 {
+			port.write(temp | 3)
+		}
+	}
+}
+
+/// stop sound
+pub fn stop_sound() {
+	let mut port: PortGeneric<u8, ReadWriteAccess> = Port::new(PORT);
+
+	unsafe {
+		let temp = port.read() & 0xFC;
+
+		port.write(temp);
 	}
 }
 

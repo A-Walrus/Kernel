@@ -39,6 +39,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cp"
+version = "0.1.0"
+dependencies = [
+ "standard",
+]
+
+[[package]]
 name = "divide"
 version = "0.1.0"
 dependencies = [

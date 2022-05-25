@@ -15,7 +15,7 @@ Satapi
 Virt UBOX: 0xffffe00000002500
 Virt UBOX: 0xffffe00000004a00
 Virt UBOX: 0xffffe00000004a00
-SuperBlock { inodes: 3840, blocks: 15340, reserved_blocks: 767, unallocated_blocks: 13327, unallocated_inodes: 3804, superblock_block_num: 1, log_block_size_minus_10: 0, log_fragment_size_minus_10: 0, blocks_in_blockgroup: 8192, fragments_in_blockgroup: 8192, inodes_in_blockgroup: 1920, last_mount_time: 1653477538, last_written_time: 1653477538, mounts_since_consistency_check: 533, mounts_allowed_before_consistency_check: 65535, signature: 61267, fs_state: 0, error_handling: 1, version_minor: 0, time_of_last_consistency_check: 1652644411, interval_between_consistency_checks: 0, creator_os_id: 0, version_major: 1, user_id_reserved: 0, group_id_reserved: 0, first_non_reserved_inode: 11, inode_size: 256, this_block_group: 0, optional_features: 56, required_features: 2, write_features: 3, fs_id: [117, 203, 59, 128, 84, 193, 79, 14, 164, 140, 67, 83, 195, 173, 72, 117], name: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], last_mount_path: [47, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], compression_algorithms: 0, num_preallocate_blocks_file: 0, num_preallocate_blocks_dir: 0, _unused0: 59, journal_id: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], journal_inode: 0, journal_device: 0, head_of_orphan_inode_list: 0 }
+SuperBlock { inodes: 3840, blocks: 15340, reserved_blocks: 767, unallocated_blocks: 13327, unallocated_inodes: 3804, superblock_block_num: 1, log_block_size_minus_10: 0, log_fragment_size_minus_10: 0, blocks_in_blockgroup: 8192, fragments_in_blockgroup: 8192, inodes_in_blockgroup: 1920, last_mount_time: 1653477790, last_written_time: 1653477790, mounts_since_consistency_check: 534, mounts_allowed_before_consistency_check: 65535, signature: 61267, fs_state: 0, error_handling: 1, version_minor: 0, time_of_last_consistency_check: 1652644411, interval_between_consistency_checks: 0, creator_os_id: 0, version_major: 1, user_id_reserved: 0, group_id_reserved: 0, first_non_reserved_inode: 11, inode_size: 256, this_block_group: 0, optional_features: 56, required_features: 2, write_features: 3, fs_id: [117, 203, 59, 128, 84, 193, 79, 14, 164, 140, 67, 83, 195, 173, 72, 117], name: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], last_mount_path: [47, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], compression_algorithms: 0, num_preallocate_blocks_file: 0, num_preallocate_blocks_dir: 0, _unused0: 59, journal_id: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], journal_inode: 0, journal_device: 0, head_of_orphan_inode_list: 0 }
 Reading group: 0
 Descriptor: BlockGroupDescriptor { block_bitmap_addr: 62, inode_bitmap_addr: 63, inode_table_addr: 64, unallocated_blocks: 6972, unallocated_inodes: 1905, dirs_in_group: 3, _unused: [4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }
 Reading group: 1
@@ -112,97 +112,7 @@ sys_open, ptr: 0x7ffffffffd10, len: 512
 bin
 sys_open, ptr: 0x7ffffffffd10, len: 512
 Process exited with status: 0
-Process lasted: 9.121339ms
-sys_open, ptr: 0x400000000090, len: 7
-Opening inode: 2
-Getting inode data 2
-Opening inode: 1930
-Getting inode data 1930
-Opening inode: 1924
-Getting inode data 1924
-sys_close, handle: 1 
-sys_exec, ptr: 0x400000000090, len: 7
-Creating process: /bin/ls
-Loading ELF /bin/ls
-Opening inode: 2
-Getting inode data 2
-Opening inode: 1930
-Getting inode data 1930
-Opening inode: 1924
-Getting inode data 1924
- - ELF Header: Program Header { type: PHDR, flags: READ, offset: 64, vaddr: 4194368, paddr: 4194368, filesize: 448, memsize: 448, alignment: 8 }
- - ELF Header: Program Header { type: LOAD, flags: READ, offset: 0, vaddr: 4194304, paddr: 4194304, filesize: 5300, memsize: 5300, alignment: 4096 }
- - ELF Header: Program Header { type: LOAD, flags: EXECUTE | READ, offset: 5312, vaddr: 4203712, paddr: 4203712, filesize: 16746, memsize: 16746, alignment: 4096 }
- - ELF Header: Program Header { type: LOAD, flags: WRITE | READ, offset: 22064, vaddr: 4224560, paddr: 4224560, filesize: 1328, memsize: 1328, alignment: 4096 }
- - ELF Header: Program Header { type: LOAD, flags: WRITE | READ, offset: 23392, vaddr: 4229984, paddr: 4229984, filesize: 16, memsize: 64, alignment: 4096 }
- - ELF Header: Program Header { type: OsSpecific(1685382482), flags: READ, offset: 22064, vaddr: 4224560, paddr: 4224560, filesize: 1328, memsize: 2512, alignment: 1 }
- - ELF Header: Program Header { type: OsSpecific(1685382480), flags: READ, offset: 5128, vaddr: 4199432, paddr: 4199432, filesize: 44, memsize: 44, alignment: 4 }
- - ELF Header: Program Header { type: OsSpecific(1685382481), flags: WRITE | READ, offset: 0, vaddr: 0, paddr: 0, filesize: 0, memsize: 0, alignment: 0 }
-sys_open, ptr: 0x400230, len: 1
-Opening inode: 2
-Getting inode data 2
-sys_open, ptr: 0x7ffffffffd10, len: 512
-.
-sys_open, ptr: 0x7ffffffffd10, len: 512
-..
-sys_open, ptr: 0x7ffffffffd10, len: 512
-Documents
-sys_open, ptr: 0x7ffffffffd10, len: 512
-puzzle6by6.json
-sys_open, ptr: 0x7ffffffffd10, len: 512
-puzzle.json
-sys_open, ptr: 0x7ffffffffd10, len: 512
-proc
-sys_open, ptr: 0x7ffffffffd10, len: 512
-bin
-sys_open, ptr: 0x7ffffffffd10, len: 512
-Process exited with status: 0
-Process lasted: 8.251916ms
-sys_open, ptr: 0x400000000090, len: 7
-Opening inode: 2
-Getting inode data 2
-Opening inode: 1930
-Getting inode data 1930
-Opening inode: 1924
-Getting inode data 1924
-sys_close, handle: 2 
-sys_exec, ptr: 0x400000000090, len: 7
-Creating process: /bin/ls
-Loading ELF /bin/ls
-Opening inode: 2
-Getting inode data 2
-Opening inode: 1930
-Getting inode data 1930
-Opening inode: 1924
-Getting inode data 1924
- - ELF Header: Program Header { type: PHDR, flags: READ, offset: 64, vaddr: 4194368, paddr: 4194368, filesize: 448, memsize: 448, alignment: 8 }
- - ELF Header: Program Header { type: LOAD, flags: READ, offset: 0, vaddr: 4194304, paddr: 4194304, filesize: 5300, memsize: 5300, alignment: 4096 }
- - ELF Header: Program Header { type: LOAD, flags: EXECUTE | READ, offset: 5312, vaddr: 4203712, paddr: 4203712, filesize: 16746, memsize: 16746, alignment: 4096 }
- - ELF Header: Program Header { type: LOAD, flags: WRITE | READ, offset: 22064, vaddr: 4224560, paddr: 4224560, filesize: 1328, memsize: 1328, alignment: 4096 }
- - ELF Header: Program Header { type: LOAD, flags: WRITE | READ, offset: 23392, vaddr: 4229984, paddr: 4229984, filesize: 16, memsize: 64, alignment: 4096 }
- - ELF Header: Program Header { type: OsSpecific(1685382482), flags: READ, offset: 22064, vaddr: 4224560, paddr: 4224560, filesize: 1328, memsize: 2512, alignment: 1 }
- - ELF Header: Program Header { type: OsSpecific(1685382480), flags: READ, offset: 5128, vaddr: 4199432, paddr: 4199432, filesize: 44, memsize: 44, alignment: 4 }
- - ELF Header: Program Header { type: OsSpecific(1685382481), flags: WRITE | READ, offset: 0, vaddr: 0, paddr: 0, filesize: 0, memsize: 0, alignment: 0 }
-sys_open, ptr: 0x400230, len: 1
-Opening inode: 2
-Getting inode data 2
-sys_open, ptr: 0x7ffffffffd10, len: 512
-.
-sys_open, ptr: 0x7ffffffffd10, len: 512
-..
-sys_open, ptr: 0x7ffffffffd10, len: 512
-Documents
-sys_open, ptr: 0x7ffffffffd10, len: 512
-puzzle6by6.json
-sys_open, ptr: 0x7ffffffffd10, len: 512
-puzzle.json
-sys_open, ptr: 0x7ffffffffd10, len: 512
-proc
-sys_open, ptr: 0x7ffffffffd10, len: 512
-bin
-sys_open, ptr: 0x7ffffffffd10, len: 512
-Process exited with status: 0
-Process lasted: 5.821334ms
+Process lasted: 8.68361ms
 sys_open, ptr: 0x400000000090, len: 12
 Opening inode: 2
 Getting inode data 2
@@ -210,7 +120,7 @@ Opening inode: 1930
 Getting inode data 1930
 Opening inode: 1938
 Getting inode data 1938
-sys_close, handle: 3 
+sys_close, handle: 1 
 sys_exec, ptr: 0x400000000090, len: 12
 Creating process: /bin/hangman
 Loading ELF /bin/hangman
@@ -229,54 +139,7 @@ Getting inode data 1938
  - ELF Header: Program Header { type: OsSpecific(1685382480), flags: READ, offset: 31960, vaddr: 4226264, paddr: 4226264, filesize: 44, memsize: 44, alignment: 4 }
  - ELF Header: Program Header { type: OsSpecific(1685382481), flags: WRITE | READ, offset: 0, vaddr: 0, paddr: 0, filesize: 0, memsize: 0, alignment: 0 }
 Process exited with status: 0
-Process lasted: 2.705123125s
-sys_open, ptr: 0x400000000090, len: 7
-Opening inode: 2
-Getting inode data 2
-Opening inode: 1930
-Getting inode data 1930
-Opening inode: 1924
-Getting inode data 1924
-sys_close, handle: 4 
-sys_exec, ptr: 0x400000000090, len: 7
-Creating process: /bin/ls
-Loading ELF /bin/ls
-Opening inode: 2
-Getting inode data 2
-Opening inode: 1930
-Getting inode data 1930
-Opening inode: 1924
-Getting inode data 1924
- - ELF Header: Program Header { type: PHDR, flags: READ, offset: 64, vaddr: 4194368, paddr: 4194368, filesize: 448, memsize: 448, alignment: 8 }
- - ELF Header: Program Header { type: LOAD, flags: READ, offset: 0, vaddr: 4194304, paddr: 4194304, filesize: 5300, memsize: 5300, alignment: 4096 }
- - ELF Header: Program Header { type: LOAD, flags: EXECUTE | READ, offset: 5312, vaddr: 4203712, paddr: 4203712, filesize: 16746, memsize: 16746, alignment: 4096 }
- - ELF Header: Program Header { type: LOAD, flags: WRITE | READ, offset: 22064, vaddr: 4224560, paddr: 4224560, filesize: 1328, memsize: 1328, alignment: 4096 }
- - ELF Header: Program Header { type: LOAD, flags: WRITE | READ, offset: 23392, vaddr: 4229984, paddr: 4229984, filesize: 16, memsize: 64, alignment: 4096 }
- - ELF Header: Program Header { type: OsSpecific(1685382482), flags: READ, offset: 22064, vaddr: 4224560, paddr: 4224560, filesize: 1328, memsize: 2512, alignment: 1 }
- - ELF Header: Program Header { type: OsSpecific(1685382480), flags: READ, offset: 5128, vaddr: 4199432, paddr: 4199432, filesize: 44, memsize: 44, alignment: 4 }
- - ELF Header: Program Header { type: OsSpecific(1685382481), flags: WRITE | READ, offset: 0, vaddr: 0, paddr: 0, filesize: 0, memsize: 0, alignment: 0 }
-sys_open, ptr: 0x400230, len: 1
-Opening inode: 2
-Getting inode data 2
-sys_open, ptr: 0x7ffffffffd10, len: 512
-.
-sys_open, ptr: 0x7ffffffffd10, len: 512
-..
-sys_open, ptr: 0x7ffffffffd10, len: 512
-Documents
-sys_open, ptr: 0x7ffffffffd10, len: 512
-puzzle6by6.json
-sys_open, ptr: 0x7ffffffffd10, len: 512
-puzzle.json
-sys_open, ptr: 0x7ffffffffd10, len: 512
-proc
-sys_open, ptr: 0x7ffffffffd10, len: 512
-bin
-sys_open, ptr: 0x7ffffffffd10, len: 512
-Process exited with status: 0
-Process lasted: 39.33465ms
-Process exited with status: 0
-Process lasted: 22.742075209s
+Process lasted: 6.919663995s
 Write to disk
 writing group 0
 writing group 1

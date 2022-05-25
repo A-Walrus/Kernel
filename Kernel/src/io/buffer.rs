@@ -516,19 +516,22 @@ impl Terminal {
 	/// see changes on screen you must flush the screen.
 	fn draw_char(&self, character: Char, pos: usize) {
 		const MASK: [u8; 8] = [128, 64, 32, 16, 8, 4, 2, 1];
+
+		let style = character.style;
+
 		let mut pos = self.index_to_pixel(pos);
 		if character.character.is_ascii() {
 			let ascii = character.character as usize;
 			let char_bitmap = &FONT[ascii];
 			for row in 0..Terminal::CHAR_HEIGHT {
-				let underline = self.brush.underline && (row == 13);
-				let strike = self.brush.strike_through && (row == 7);
+				let underline = style.underline && (row == 13);
+				let strike = style.strike_through && (row == 7);
 				let row_filled = underline || strike;
 				for col in 0..Terminal::CHAR_WIDTH {
 					let color = if char_bitmap[row] & MASK[col] != 0 || row_filled {
-						self.brush.fg_color
+						style.fg_color
 					} else {
-						self.brush.bg_color
+						style.bg_color
 					};
 					if self.is_active() {
 						screen_mut().put_pixel(color, &pos);

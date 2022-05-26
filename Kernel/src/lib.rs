@@ -45,7 +45,7 @@ pub mod process;
 
 use core::panic::PanicInfo;
 
-const SOUND_ENABLE: bool = false;
+const SOUND_ENABLE: bool = true;
 
 /// End the os
 pub fn end() -> ! {

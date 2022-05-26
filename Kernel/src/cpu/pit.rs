@@ -1,5 +1,8 @@
 use super::interrupts::{PICS, PIC_1_OFFSET};
 use crate::{cpu::syscalls::Registers, process, serial_println};
+use alloc::collections::VecDeque;
+use lazy_static::lazy_static;
+use spin::Mutex;
 use x86_64::{
 	instructions::{hlt, port::*},
 	structures::idt::InterruptStackFrame,
@@ -16,6 +19,73 @@ const PIT_BASE_FREQ: u64 = 1193182;
 pub const TIMER_NANOS: u64 = 50_000_000;
 const QUANTA: usize = 1;
 
+/// A Note or a rest
+pub struct Note {
+	/// Duration
+	pub duration: Duration,
+	/// Frequency. None = rest
+	pub pitch: Option<u64>,
+	playing: bool,
+}
+
+impl Note {
+	fn new(pitch: Option<u64>, duration: Duration) -> Self {
+		Note {
+			duration,
+			pitch,
+			playing: false,
+		}
+	}
+
+	fn check_done(&self) -> bool {
+		let is_done = self.duration.as_nanos() < (TIMER_NANOS as u128) / 2;
+		if is_done {
+			stop_sound()
+		};
+		is_done
+	}
+
+	fn start_playing(&mut self) {
+		self.playing = true;
+		match self.pitch {
+			Some(freq) => {
+				self.duration -= Duration::from_nanos(TIMER_NANOS);
+				start_sound();
+				set_freq(freq);
+			}
+			None => {} // rest
+		}
+	}
+}
+
+lazy_static! {
+	static ref QUEUE: Mutex<VecDeque<Note>> = Mutex::new(VecDeque::new());
+}
+
+/// handle note queue
+fn handle_queue() {
+	let mut queue = QUEUE.lock();
+	if queue.is_empty() {
+		return;
+	}
+	let first = &mut queue[0];
+	let is_done = first.check_done();
+	if is_done {
+		queue.pop_front();
+		let next = queue.get_mut(0);
+		match next {
+			Some(note) => {
+				note.start_playing();
+			}
+			None => {}
+		}
+	} else if !first.playing {
+		first.start_playing()
+	} else {
+		first.duration -= Duration::from_nanos(TIMER_NANOS);
+	}
+}
+
 /// setup PIT
 pub fn setup_pit() {
 	let freq_hz = 1_000_000_000 / TIMER_NANOS;
@@ -28,6 +98,11 @@ pub fn setup_pit() {
 		data.write((divisor & 0xff) as u8);
 		data.write(((divisor >> 8) & 0xff) as u8);
 	}
+}
+
+/// Add a note to the queue
+pub fn queue_note(note: Note) {
+	QUEUE.lock().push_back(note);
 }
 
 /// set timer frequency
@@ -181,6 +256,7 @@ extern "C" fn handle_timer_inner(registers_ptr: *mut Registers) -> *const u8 {
 		PROC_COUNTER += 1;
 		PIT_COUNTER += 1;
 	};
+	handle_queue();
 	unsafe {
 		PICS.lock().notify_end_of_interrupt(PIC_1_OFFSET + 0);
 	}
@@ -308,11 +384,11 @@ pub fn play_startup_song() {
 
 		// startup
 		wait_for_pit();
-		play_note(623, eigth_note + sixteenth_note_triplet);
-		play_note(312, eigth_note_triplet);
-		play_note(467, quarter_note);
-		play_note(415, quarter_note + eigth_note_triplet);
-		play_note(623, quarter_note_triplet);
-		play_note(467, half_note);
+		queue_note(Note::new(Some(623), eigth_note + sixteenth_note_triplet));
+		queue_note(Note::new(Some(312), eigth_note_triplet));
+		queue_note(Note::new(Some(467), quarter_note));
+		queue_note(Note::new(Some(415), quarter_note + eigth_note_triplet));
+		queue_note(Note::new(Some(623), quarter_note_triplet));
+		queue_note(Note::new(Some(467), half_note));
 	}
 }

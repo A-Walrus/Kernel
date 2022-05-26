@@ -152,6 +152,15 @@ pub fn rmdir(path: &str) -> Result<(), ()> {
 	}
 }
 
+pub fn mkdir(path: &str) -> Result<(), ()> {
+	let res = unsafe { syscall2(15, path.as_ptr() as usize, path.len()) };
+	if res < 0 {
+		Err(())
+	} else {
+		Ok(())
+	}
+}
+
 pub fn unlink(path: &str) -> Result<(), ()> {
 	let res = unsafe { syscall2(12, path.as_ptr() as usize, path.len()) };
 	if res < 0 {

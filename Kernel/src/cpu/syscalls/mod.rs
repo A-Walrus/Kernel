@@ -47,7 +47,7 @@ pub enum SyscallResult {
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 15] = [
+const SYSCALLS: [Syscall; 16] = [
 	sys_debug,
 	sys_print,
 	sys_exit,
@@ -63,11 +63,11 @@ const SYSCALLS: [Syscall; 15] = [
 	sys_rm,
 	sys_rmdir,
 	sys_kill,
+	sys_mkdir,
 ];
 
 fn sys_rm(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
-	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
 	let opt_slice;
 	unsafe {
 		// This is not sound. Who knows what the user put as the pointer
@@ -89,9 +89,31 @@ fn sys_rm(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	}
 }
 
+fn sys_mkdir(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	let ptr = ptr as *const u8;
+	let opt_slice;
+	unsafe {
+		// This is not sound. Who knows what the user put as the pointer
+		opt_slice = slice_from_raw_parts(ptr, len as usize).as_ref();
+	}
+
+	if let Some(slice) = opt_slice {
+		let a = str::from_utf8(slice);
+		if let Ok(path) = a {
+			match crate::fs::ext2::mkdir(path) {
+				Ok(_) => Result(0),
+				Err(_) => Result(-1),
+			}
+		} else {
+			Result(-1)
+		}
+	} else {
+		Result(-1)
+	}
+}
+
 fn sys_rmdir(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
-	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
 	let opt_slice;
 	unsafe {
 		// This is not sound. Who knows what the user put as the pointer
@@ -145,7 +167,6 @@ fn sys_close(handle: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResu
 		Ok(h) => h,
 		Err(_) => return Result(-1),
 	};
-	serial_println!("sys_close, handle: {} ", handle);
 
 	let running = process::running_process();
 	let mut lock = process::MAP.lock();
@@ -170,7 +191,6 @@ bitflags! {
 
 fn sys_open_dir(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
-	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
 	let opt_slice;
 	unsafe {
 		// This is not sound. Who knows what the user put as the pointer
@@ -199,7 +219,6 @@ fn sys_open_dir(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallRe
 }
 fn sys_open(ptr: u64, len: u64, flags: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
-	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
 	let opt_slice;
 	unsafe {
 		// This is not sound. Who knows what the user put as the pointer
@@ -237,7 +256,6 @@ fn sys_write(ptr: u64, len: u64, handle: u64, _: u64, _: u64, _: u64) -> Syscall
 		Err(_) => return Result(-1),
 	};
 	let ptr = ptr as *const u8;
-	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
 	let opt_slice;
 	unsafe {
 		// This is not sound. Who knows what the user put as the pointer
@@ -265,7 +283,6 @@ fn sys_read(ptr: u64, len: u64, handle: u64, _: u64, _: u64, _: u64) -> SyscallR
 		Err(_) => return Result(-1),
 	};
 	let ptr = ptr as *mut u8;
-	serial_println!("sys_open, ptr: {:?}, len: {}", ptr, len);
 	let opt_slice;
 	unsafe {
 		// This is not sound. Who knows what the user put as the pointer
@@ -344,7 +361,6 @@ fn sys_print(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResul
 
 fn sys_exec(ptr: u64, len: u64, argv: u64, argc: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;
-	serial_println!("sys_exec, ptr: {:?}, len: {}", ptr, len);
 	let executable_opt_slice;
 	unsafe {
 		// This is not sound. Who knows what the user put as the pointer

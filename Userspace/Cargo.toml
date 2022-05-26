@@ -20,4 +20,5 @@ members = [
   "rmdir",
   "rm",
   "cp",
+  "mkdir",
 ]

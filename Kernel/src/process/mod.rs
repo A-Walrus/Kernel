@@ -263,7 +263,7 @@ impl PCB {
 				syscalls::go_to_ring3(data.entry, data.stack_top, data.argc, data.argv.as_u64() as usize);
 			},
 			State::Timer {
-				registers,
+				mut registers,
 				instruction_pointer,
 				rflags,
 			} => {
@@ -276,46 +276,52 @@ impl PCB {
 					use x86_64::instructions::segmentation::{Segment, DS};
 					DS::set_reg(GDT.1.user_data_selector);
 
+					let out_sp: u64;
 					asm!(
 						"push rax",
 						"push {sp}",
 						"push {flags}",
 						"push rdx",
 						"push {ip}",
+						"mov {out_sp}, rsp",
 						"add rsp, 8*5",
 						sp = in(reg) registers.scratch.rsp,
 						flags = in(reg) rflags,
 						ip = in(reg) instruction_pointer.as_u64(),
+						out_sp = out(reg) out_sp,
 						in("dx") cs_idx,
 						in("ax") ds_idx,
 
 					);
+					registers.scratch.rsp = out_sp;
 
+					let start_addr: *const Registers = &registers;
 					asm!(
-						"mov rbp, {rbp}",
-						"mov rbx, {rbx}",
-						rbp = in(reg) registers.preserved.rbp,
-						rbx = in(reg) registers.preserved.rbx,
-						// TODO figure out if i need to say I'm changing rbp
-					);
-					asm!(
-						"",
-						in("r12") registers.preserved.r12,
-						in("r13") registers.preserved.r13,
-						in("r14") registers.preserved.r14,
-						in("r15") registers.preserved.r15,
-						in("r11") registers.scratch.r11,
-						in("r10") registers.scratch.r10,
-						in("r9") registers.scratch.r9,
-						in("r8") registers.scratch.r8,
-						in("rsi") registers.scratch.rsi,
-						in("rax") registers.scratch.rax,
-						in("rdi") registers.scratch.rdi,
-						in("rdx") registers.scratch.rdx,
-						in("rcx") registers.scratch.rcx,
-					);
+					"mov rsp, {addr}",
+					// Pop preserved registers
+					"
+					pop r15
+					pop r14
+					pop r13
+					pop r12
+					pop rbp
+					pop rbx",
+					// Pop scratch registers
+					"
+					pop r11
+					pop r10
+					pop r9
+					pop r8
+					pop rsi
+					pop rdi
+					pop rdx
+					pop rcx
+					pop rax
+					pop rsp
+					iretq",
 
-					asm!("sub rsp, 8*5", "iretq");
+					addr = in(reg) start_addr,
+						);
 				}
 			}
 			State::Syscall { registers } => {

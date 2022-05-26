@@ -207,7 +207,7 @@ fn exception(string: &str, stack_frame: InterruptStackFrame) -> ! {
 
 fn exception_error(string: &str, stack_frame: InterruptStackFrame, error_code: u64) -> ! {
 	serial_println!(
-		"EXCEPTION: {} \n - ERRORCODE:{} \n - {:#?}",
+		"EXCEPTION: {} \n - ERRORCODE: {} \n - {:#?}",
 		string,
 		error_code,
 		stack_frame

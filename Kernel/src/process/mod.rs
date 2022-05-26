@@ -86,7 +86,6 @@ impl OpenFiles {
 						if len > slice.len() {
 							return Err(Ext2Err::IO(IOError::BufferTooSmall));
 						}
-						serial_println!("{}", name);
 						slice[..len].copy_from_slice(name.as_bytes());
 						dir.next();
 						Ok(len)
@@ -530,7 +529,6 @@ fn get_new_pid() -> Pid {
 
 fn create_process(executable_path: &str, args: &[&str], term: Option<usize>) -> Result<PCB, elf::ElfErr> {
 	let terminal = term.unwrap_or_else(|| crate::io::buffer::active_term());
-	serial_println!("Creating process: {}", executable_path);
 	let mut page_table = paging::get_new_user_table();
 	let data = elf::load_elf(executable_path, &mut page_table.0, args)?;
 	Ok(PCB {

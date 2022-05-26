@@ -55,9 +55,7 @@ pub unsafe fn get_disks() -> Result<Vec<Box<dyn BlockDevice>>, AhciError> {
 		Some(function) => {
 			serial_println!("Found AHCI device: {:?}", function);
 			let abar = pci::get_bars(*function)[5];
-			serial_println!("ABAR: {:?}", abar);
 			let interrupt = pci::get_interrupt(*function);
-			serial_println!("Interrupt: {:?}", interrupt);
 			use crate::cpu::interrupts::register_callback;
 			register_callback(8 + interrupt.line, interrupt_handler);
 

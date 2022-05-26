@@ -16,8 +16,8 @@ const PORT: u16 = 0x61; // Read/Write
 const PIT_BASE_FREQ: u64 = 1193182;
 
 /// Milliseconds per PIT
-pub const TIMER_NANOS: u64 = 50_000_000;
-const QUANTA: usize = 1;
+pub const TIMER_NANOS: u64 = 10_000_000;
+const QUANTA: usize = 5;
 
 /// A Note or a rest
 pub struct Note {
@@ -49,12 +49,19 @@ impl Note {
 		self.playing = true;
 		match self.pitch {
 			Some(freq) => {
-				self.duration -= Duration::from_nanos(TIMER_NANOS);
+				self.decrease_time();
 				start_sound();
 				set_freq(freq);
 			}
 			None => {} // rest
 		}
+	}
+
+	fn decrease_time(&mut self) {
+		self.duration = self
+			.duration
+			.checked_sub(Duration::from_nanos(TIMER_NANOS))
+			.unwrap_or(Duration::ZERO);
 	}
 }
 
@@ -82,7 +89,7 @@ fn handle_queue() {
 	} else if !first.playing {
 		first.start_playing()
 	} else {
-		first.duration -= Duration::from_nanos(TIMER_NANOS);
+		first.decrease_time();
 	}
 }
 

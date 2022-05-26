@@ -112,8 +112,7 @@ impl<T> UBox<T> {
 	pub fn new(value: T) -> Self {
 		unsafe {
 			let ptr = uncached_allocate_value(value);
-			serial_println!("Virt UBOX: {:?}", ptr);
-			UBox { ptr: ptr }
+			UBox { ptr }
 		}
 	}
 }

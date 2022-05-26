@@ -50,19 +50,16 @@ const SOUND_ENABLE: bool = true;
 /// End the os
 pub fn end() -> ! {
 	fs::ext2::cleanup().expect("Failed to cleanup EXT2");
+	serial_println!("Finished cleanup");
 
 	unsafe {
 		process::RUNNING = false;
 	}
 	x86_64::instructions::interrupts::enable();
 
-	cpu::pit::play_shutdown_song();
-
-	serial_println!("Finished cleanup");
-
-	serial_println!("The end");
-
 	println!("Shutting down...");
+
+	cpu::pit::play_shutdown_song();
 
 	util::qemu::exit();
 }

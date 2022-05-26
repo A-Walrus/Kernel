@@ -58,7 +58,6 @@ pub struct LoadData {
 /// load an ELF executable
 // pub fn load_elf(path: &str, page_table: &mut PageTable, args: &[&str]) -> Result<(VirtAddr, VirtAddr), ElfErr> {
 pub fn load_elf(path: &str, page_table: &mut PageTable, args: &[&str]) -> Result<LoadData, ElfErr> {
-	serial_println!("Loading ELF {}", path);
 	let file_data = ext2::read_file(path)?;
 	let elf = Elf::from_bytes(&file_data)?;
 	let elf64 = match elf {
@@ -74,7 +73,6 @@ pub fn load_elf(path: &str, page_table: &mut PageTable, args: &[&str]) -> Result
 	}
 
 	for header in elf64.program_header_iter() {
-		serial_println!(" - ELF Header: {:?}", header);
 		if header.ph_type() == ProgramType::LOAD {
 			let addr = VirtAddr::new(header.vaddr());
 			let size = header.memsz() as usize;

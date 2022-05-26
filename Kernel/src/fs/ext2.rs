@@ -358,7 +358,6 @@ struct Ext2 {
 
 impl Ext2 {
 	fn get_inode_data(&self, inode: Inode) -> &InodeData {
-		serial_println!("Getting inode data {}", inode);
 		let group = self.super_block.inode_blockgroup(inode);
 		let index_in_group = self.super_block.inode_index_in_blockgroup(inode);
 		let group = &self.block_groups[group as usize];
@@ -377,14 +376,12 @@ impl Ext2 {
 
 		let mut sector_reader = BlockReader::new(2, 1, 0, block_device);
 		let super_block: SuperBlock = unsafe { sector_reader.read_type().unwrap() };
-		serial_println!("{:?}", super_block);
 		super_block.check_signature()?;
 
 		let mut block_reader = BlockReader::new(0, super_block.sectors_per_block(), 0, block_device);
 
 		let mut block_groups = Vec::new();
 		for group_index in 0..super_block.num_blockgroups() {
-			serial_println!("Reading group: {}", group_index);
 			block_reader.move_to_block(super_block.block_group_start_block(0))?;
 
 			block_reader.seek(SeekFrom::Current(
@@ -392,7 +389,6 @@ impl Ext2 {
 			))?;
 
 			let descriptor: BlockGroupDescriptor = unsafe { block_reader.read_type()? };
-			serial_println!("Descriptor: {:?}", descriptor);
 
 			let table_size = super_block.inodes_in_blockgroup as usize * super_block.inode_size as usize;
 			let mut blocks = vec![0; table_size];
@@ -434,10 +430,7 @@ impl Ext2 {
 
 		let mut block_reader = BlockReader::new(0, self.super_block.sectors_per_block(), 0, block_device);
 
-		serial_println!("Write to disk");
-
-		for (i, group) in self.block_groups.iter().enumerate() {
-			serial_println!("writing group {}", i);
+		for group in self.block_groups.iter() {
 			block_reader.move_to_block(group.first_block)?;
 			for group in &self.block_groups {
 				block_reader.write_type(&group.descriptor)?;
@@ -489,11 +482,6 @@ impl Ext2 {
 		let group = &mut self.block_groups[group as usize];
 		group.free_block(block)?;
 		self.super_block.unallocated_blocks += 1;
-		serial_println!(
-			"Freed block {}, free block count is now: {}",
-			block,
-			self.super_block.unallocated_blocks
-		);
 		Ok(())
 	}
 
@@ -639,7 +627,6 @@ pub fn add_regular_file(path: &str) -> Result<Inode, Ext2Err> {
 		os_specific_val2: [0; 12],
 	};
 	let inode = add_inode(inode_data)?;
-	serial_println!("Adding new file at inode: {}", inode);
 	link(path, inode)?;
 	Ok(inode)
 }
@@ -692,7 +679,6 @@ pub fn link(path: &str, inode: Inode) -> Result<Inode, Ext2Err> {
 /// Create a directory
 pub fn mkdir(path: &str) -> Result<Inode, Ext2Err> {
 	// TODO check that path is okay before doing anything
-	serial_println!("mkdir {}", path);
 	let inode_data = InodeData {
 		type_and_permissions: TypeAndPermissions::new(Type::Directory, 0b000111101101),
 		user_id: 0,
@@ -718,10 +704,8 @@ pub fn mkdir(path: &str) -> Result<Inode, Ext2Err> {
 	};
 
 	let inode = add_inode(inode_data)?;
-	serial_println!("Added inode");
 
 	let parent_inode = link(path, inode)?;
-	serial_println!("Linked");
 
 	let mut directory = Directory::empty();
 	directory.entries.push(Entry {
@@ -762,7 +746,6 @@ pub fn mkdir(path: &str) -> Result<Inode, Ext2Err> {
 /// Remov an empty (only . and ..) directory
 pub fn rmdir(path: &str) -> Result<(), Ext2Err> {
 	let inode = path_to_inode(path)?;
-	serial_println!("Rmdir Inode: {} ", inode);
 
 	let parent_inode;
 	{
@@ -784,7 +767,6 @@ pub fn rmdir(path: &str) -> Result<(), Ext2Err> {
 			})
 			.map_or(Err(NoParentDir), |a| Ok(a))?;
 	}
-	serial_println!("Parent inode: {} ", parent_inode);
 	// Update directory count
 	{
 		let mut ext = get_ext!().lock();
@@ -845,11 +827,8 @@ pub fn unlink(path: &str, allow: bool) -> Result<(), Ext2Err> {
 	let index = path.rfind(SEPARATOR).unwrap();
 	let folder_path = &path[..index + 1];
 	let file_name = &path[index + 1..];
-	serial_println!("file name: {} ", file_name);
-	serial_println!("folder path: {} ", folder_path);
 
 	let dir_inode = path_to_inode(folder_path)?;
-	serial_println!("folder inode: {} ", dir_inode);
 
 	let mut parent_reader = File::new(dir_inode)?;
 	let mut directory = Directory::read(&mut parent_reader)?;
@@ -998,7 +977,6 @@ impl File {
 	}
 
 	fn new(inode: u32) -> Result<Self, Ext2Err> {
-		serial_println!("Opening inode: {}", inode);
 		let ext = get_ext!();
 		let device = get_device!();
 		let inode_data = *ext.lock().get_inode_data(inode);

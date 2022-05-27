@@ -161,6 +161,12 @@ pub fn mkdir(path: &str) -> Result<(), ()> {
 	}
 }
 
+pub fn info(info_type: usize, arg0: Option<usize>) {
+	unsafe {
+		syscall2(16, info_type, arg0.unwrap_or(0));
+	}
+}
+
 pub fn unlink(path: &str) -> Result<(), ()> {
 	let res = unsafe { syscall2(12, path.as_ptr() as usize, path.len()) };
 	if res < 0 {

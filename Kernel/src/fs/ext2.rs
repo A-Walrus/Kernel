@@ -951,7 +951,8 @@ fn get_indirect_blocks(
 /// File handle
 #[derive(Debug)]
 pub struct File {
-	inode: Inode,
+	/// File Inode
+	pub inode: Inode,
 	inode_data: InodeData,
 	reader: BlockReader,
 	position: usize,

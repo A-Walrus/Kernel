@@ -7,7 +7,7 @@ use core::{
 
 use crate::{
 	cpu::gdt::GDT,
-	process,
+	println, process,
 	process::{Handle, Pid},
 	serial_print, serial_println,
 };
@@ -47,7 +47,7 @@ pub enum SyscallResult {
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 16] = [
+const SYSCALLS: [Syscall; 17] = [
 	sys_debug,
 	sys_print,
 	sys_exit,
@@ -64,7 +64,41 @@ const SYSCALLS: [Syscall; 16] = [
 	sys_rmdir,
 	sys_kill,
 	sys_mkdir,
+	sys_info,
 ];
+
+// 0 - procs
+// 1 - pcb
+
+fn sys_info(info_type: u64, arg0: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
+	match info_type {
+		0 => {
+			//procs
+			let map = process::MAP.lock();
+			println!("{}\t{}\t{}", "PID", "TTY", "CMD");
+			for pid in process::QUEUE.lock().iter() {
+				let pcb = map.get(pid).expect("process from queue not in map");
+				println!("{}\t{}\t{}", pid, pcb.terminal, pcb.command);
+			}
+		}
+		1 => {
+			//pcb
+			let pid: Pid = arg0 as usize;
+			let map = process::MAP.lock();
+			match map.get(&pid) {
+				Some(pcb) => {
+					println!("{}", pcb);
+				}
+				None => {
+					println!("No process matching PID {} found!", pid);
+					return Result(-1);
+				}
+			}
+		}
+		_ => return Result(-1),
+	}
+	return Result(0);
+}
 
 fn sys_rm(ptr: u64, len: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	let ptr = ptr as *const u8;

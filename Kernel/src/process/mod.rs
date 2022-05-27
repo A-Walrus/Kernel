@@ -9,10 +9,10 @@ use crate::{
 };
 use alloc::{
 	collections::VecDeque,
-	string::String,
+	string::{String, ToString},
 	vec::{IntoIter, Vec},
 };
-use core::time::Duration;
+use core::{fmt, time::Duration};
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -25,7 +25,8 @@ pub static mut RUNNING: bool = false;
 pub type Pid = usize;
 
 lazy_static! {
-	static ref QUEUE: Mutex<VecDeque<Pid>> = Mutex::new(VecDeque::new());
+	/// Queue of process pids
+	pub static ref QUEUE: Mutex<VecDeque<Pid>> = Mutex::new(VecDeque::new());
 }
 
 lazy_static! {
@@ -42,11 +43,39 @@ enum BackHandle {
 	Dir(IntoIter<Entry>),
 }
 
+impl fmt::Display for BackHandle {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		match self {
+			BackHandle::File(file) => {
+				write!(f, "File, Inode {}", file.inode)?;
+			}
+
+			BackHandle::Dir(dir) => {
+				write!(f, "Directory")?;
+			}
+		}
+		Ok(())
+	}
+}
+
 /// A struct managing open files
 #[derive(Debug)]
 pub struct OpenFiles {
 	handles: HashMap<Handle, BackHandle>,
 	next: Handle, // handles: (),
+}
+
+impl fmt::Display for OpenFiles {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		if self.handles.is_empty() {
+			write!(f, "None")?;
+		} else {
+			for (n, back) in self.handles.iter() {
+				write!(f, "\n\t{} - {}", n, back)?;
+			}
+		}
+		Ok(())
+	}
 }
 
 unsafe impl Send for PCB {}
@@ -171,6 +200,21 @@ pub enum BlockData {
 	Wait(Pid),
 }
 
+impl fmt::Display for BlockData {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		match self {
+			BlockData::Input { slice: _ } => {
+				write!(f, "Input")?;
+			}
+
+			BlockData::Wait(pid) => {
+				write!(f, "Process {} termination", pid)?;
+			}
+		}
+		Ok(())
+	}
+}
+
 unsafe impl Sync for BlockData {}
 unsafe impl Send for BlockData {}
 
@@ -178,6 +222,21 @@ unsafe impl Send for BlockData {}
 enum BlockState {
 	Blocked { still: bool, data: BlockData },
 	Ready,
+}
+
+impl fmt::Display for BlockState {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		match self {
+			BlockState::Ready => {
+				write!(f, "Ready")?;
+			}
+			BlockState::Blocked { still, data } => {
+				let qualifier = if *still { "Blocked on" } else { "Just unblocked from" };
+				write!(f, "{} - {}", qualifier, data)?;
+			}
+		}
+		Ok(())
+	}
 }
 
 impl BlockState {
@@ -193,7 +252,7 @@ impl BlockState {
 /// Process control block
 #[derive(Debug)]
 pub struct PCB {
-	// pid: Pid,
+	pid: Pid,
 	state: State,
 	block_state: BlockState,
 	page_table: UserPageTable,
@@ -205,12 +264,31 @@ pub struct PCB {
 	/// Terminal this process prints to
 	pub terminal: usize,
 	start_time: Duration,
+	/// Command called to crate this process
+	pub command: String,
 }
 
-/// Get process in foreground
-pub fn foreground_process() -> Pid {
-	// TODO actual foreground
-	QUEUE.lock()[0]
+impl fmt::Display for PCB {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		writeln!(f, "Command: {}", self.command)?;
+		writeln!(f, "Terminal: {}", self.terminal)?;
+		if self.pid == running_process() {
+			// this process is running
+			writeln!(f, "State: Running")?;
+		} else {
+			writeln!(f, "State: {}", self.block_state)?;
+		}
+		writeln!(
+			f,
+			"Start Time: {:?} (running for {:?})",
+			self.start_time,
+			get_time() - self.start_time
+		)?;
+		writeln!(f, "Open Files: {}", self.open_files)?;
+		writeln!(f, "Waiting Processes: {:?}", self.waiting_processes)?;
+		writeln!(f, "Input Buffer: {:?}", self.input_buffer)?;
+		Ok(())
+	}
 }
 
 /// Get currenty running process
@@ -512,8 +590,8 @@ pub fn context_switch(state: State) -> ! {
 
 /// Add a new process to the queue
 pub fn add_process(executable_path: &str, args: &[&str], term: Option<usize>) -> Result<Pid, elf::ElfErr> {
-	let process = create_process(executable_path, args, term)?;
 	let new_pid = get_new_pid();
+	let process = create_process(executable_path, args, term, new_pid)?;
 
 	QUEUE.lock().push_back(new_pid);
 	let prev_key = MAP.lock().insert(new_pid, process);
@@ -533,7 +611,7 @@ fn get_new_pid() -> Pid {
 	pid
 }
 
-fn create_process(executable_path: &str, args: &[&str], term: Option<usize>) -> Result<PCB, elf::ElfErr> {
+fn create_process(executable_path: &str, args: &[&str], term: Option<usize>, pid: Pid) -> Result<PCB, elf::ElfErr> {
 	let terminal = term.unwrap_or_else(|| crate::io::buffer::active_term());
 	let mut page_table = paging::get_new_user_table();
 	let data = elf::load_elf(executable_path, &mut page_table.0, args)?;
@@ -544,6 +622,8 @@ fn create_process(executable_path: &str, args: &[&str], term: Option<usize>) -> 
 		open_files: OpenFiles::new(),
 		waiting_processes: Vec::new(),
 		start_time: get_time(),
+		command: executable_path.to_string(),
+		pid,
 		page_table,
 		terminal,
 	})

@@ -21,4 +21,5 @@ members = [
   "rm",
   "cp",
   "mkdir",
+  "mv",
 ]

@@ -935,7 +935,7 @@ fn get_indirect_blocks(
 	if block == 0 {
 		return Ok(());
 	} else {
-		let mut sub_blocks = &*get_sub_blocks(b_reader, block)?;
+		let mut sub_blocks = &*get_sub_blocks(b_reader, block)?.to_vec();
 
 		let zero_index = sub_blocks.iter().position(|val| *val == 0);
 		if let Some(index) = zero_index {
@@ -946,7 +946,7 @@ fn get_indirect_blocks(
 				blocks.extend_from_slice(sub_blocks);
 			}
 			for block in sub_blocks {
-				get_indirect_blocks(blocks, b_reader, *block, indirectness, with_parents)?;
+				get_indirect_blocks(blocks, b_reader, *block, indirectness - 1, with_parents)?;
 			}
 		} else {
 			if with_parents {
@@ -1354,25 +1354,36 @@ pub fn setup() -> Result<(), Ext2Err> {
 }
 
 /// Do some things to the file system
-pub fn test() {
-	let inode = mkdir("/new_directory").expect("Failed to create directory");
+pub fn test() -> Result<(), Ext2Err> {
+	let inode = path_to_inode("/profile.png")?;
+	let mut file = File::new(inode)?;
+	let mut vec = Vec::new();
+	file.read_to_end(&mut vec)?;
+	serial_println!(
+		"Read (past tense) very big file (with doubly indirect), of length {}",
+		vec.len()
+	);
+
+	let inode = mkdir("/new_directory")?;
 	println!("Directory inode: {}", inode);
 
-	let inode = add_regular_file("/new_directory/new_file.txt").expect("Failed to add file");
-	println!("File indoe: {}", inode);
-	let mut writer = File::new(inode).expect("failed ot open file");
-	writer.write(b"Hello world!\n").expect("Failed to write");
-	writer.write(b"My name is Guy\n").expect("Failed to write");
+	let inode = add_regular_file("/new_directory/new_file.txt")?;
+	println!("File inode: {}", inode);
+	let mut writer = File::new(inode)?;
+	writer.write(b"Hello world!\n")?;
+	writer.write(b"My name is Guy\n")?;
 	for _ in 0..10 {
-		writer.write(TEST_DATA).expect("failed to write");
+		writer.write(TEST_DATA)?;
 	}
 
-	// add_regular_file("/other_file.txt").expect("Failed to add file");
-	// rmdir("/bar").expect("Failed to delete dir");
+	add_regular_file("/other_file.txt")?;
+	mkdir("/bar")?;
+	rmdir("/bar")?;
 
-	// let inode = path_to_inode("/alice.txt").expect("failed ot open inode");
-	// let mut writer = File::new(inode).expect("failed ot open file");
-	// writer.write(b"hello eran").expect("Failed to write");
+	let inode = path_to_inode("/Documents/alice.txt")?;
+	let mut writer = File::new(inode)?;
+	writer.write(b"hello eran")?;
+	Ok(())
 }
 
 /// Read entire file into Vec

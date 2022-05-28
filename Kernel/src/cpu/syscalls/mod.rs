@@ -119,6 +119,18 @@ fn sys_info(info_type: u64, arg0: u64, _: u64, _: u64, _: u64, _: u64) -> Syscal
 			crate::fs::ext2::print_inode(arg0 as u32);
 		}
 
+		4 => {
+			// mem
+			let buddy = crate::mem::buddy::ALLOCATOR.lock();
+			let free_space = buddy.get_free_space();
+			println!(
+				"Free RAM: {}MiB ({}KiB, {}B)",
+				free_space / 0x100000,
+				free_space / 0x400,
+				free_space
+			);
+		}
+
 		_ => return Result(-1),
 	}
 	return Result(0);

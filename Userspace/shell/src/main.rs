@@ -26,6 +26,9 @@ pub extern "C" fn main() -> isize {
 			"ps" => {
 				info(0, None);
 			}
+			"mem" => {
+				info(4, None);
+			}
 			"superblock" => {
 				info(2, None);
 			}

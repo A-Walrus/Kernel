@@ -1,7 +1,6 @@
 #!/bin/bash
 cd ../Userspace
 cargo build --release
-cargo build 
 cd ..
 ./update_image.sh
 cd Kernel/simple_boot

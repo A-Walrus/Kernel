@@ -89,6 +89,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "len"
+version = "0.1.0"
+dependencies = [
+ "standard",
+]
+
+[[package]]
 name = "libm"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,0 +1,13 @@
+[package]
+name = "raytracer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+standard = {path ="../standard"}
+lazy_static = {version = "1.0",features = ["spin_no_std"]} # safe interface to mutable statics
+libm = "0.2.2"
+rand = {version="*",default-features=false,features=["small_rng"]}
+spin = "0.5.2" # for lazy_static

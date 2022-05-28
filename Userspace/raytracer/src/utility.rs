@@ -1,7 +1,6 @@
 use lazy_static::lazy_static;
 use nanorand::{Rng, WyRand};
 use spin::Mutex;
-use standard::println;
 
 lazy_static! {
 	static ref RNG: Mutex<WyRand> = Mutex::new(WyRand::new_seed(0x5502cf95915b7ef9));

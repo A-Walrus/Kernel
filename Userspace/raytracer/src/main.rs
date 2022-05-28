@@ -10,22 +10,17 @@ mod utility;
 mod vector;
 use camera::Camera;
 use hittable::{HitRecord, Hittable, HittableList};
-use material::*;
 use ray::*;
 use utility::*;
 use vector::*;
 
-use standard::{
-	io::{Read, Write},
-	syscalls::*,
-	*,
-};
+use standard::{io::*, syscalls::*, *};
 extern crate alloc;
-use alloc::{boxed::Box, format, vec::Vec};
+use alloc::{boxed::Box, format};
 
 extern crate lazy_static;
 
-use crate::{angles::Degrees, hittable::Sphere};
+use crate::angles::Degrees;
 
 fn ray_color(ray: &Ray, world: &Box<dyn Hittable>, depth: usize) -> Color {
 	let mut rec = HitRecord::default();
@@ -61,7 +56,7 @@ pub extern "C" fn main() -> isize {
 	const IMAGE_WIDTH: usize = 120;
 	const IMAGE_HEIGHT: usize = (IMAGE_WIDTH as f64 / ASPECT_RATIO) as usize;
 	const SAMPLES_PER_PIXEL: usize = 5;
-	const MAX_DEPTH: usize = 50;
+	const MAX_DEPTH: usize = 5;
 
 	// World
 
@@ -85,9 +80,10 @@ pub extern "C" fn main() -> isize {
 	);
 	// Render
 
-	file.write("P3\n".as_bytes());
-	file.write(format!("{} {}\n", IMAGE_WIDTH, IMAGE_HEIGHT).as_bytes());
-	file.write("255\n".as_bytes());
+	file.write("P3\n".as_bytes()).expect("Failed to write to file");
+	file.write(format!("{} {}\n", IMAGE_WIDTH, IMAGE_HEIGHT).as_bytes())
+		.expect("Failed to write to file");
+	file.write("255\n".as_bytes()).expect("Failed to write to file");
 
 	for j in (0..IMAGE_HEIGHT).rev() {
 		if !draw {

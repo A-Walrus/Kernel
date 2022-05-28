@@ -20,7 +20,7 @@ impl Default for &dyn Material {
 struct BlackHole {}
 
 impl Material for BlackHole {
-	fn scatter(&self, ray_in: &Ray, rec: &HitRecord) -> Option<(Color, Ray)> {
+	fn scatter(&self, _ray_in: &Ray, _rec: &HitRecord) -> Option<(Color, Ray)> {
 		None
 	}
 }
@@ -30,7 +30,7 @@ pub struct Lambertian {
 }
 
 impl Material for Lambertian {
-	fn scatter(&self, ray_in: &Ray, rec: &HitRecord) -> Option<(Color, Ray)> {
+	fn scatter(&self, _ray_in: &Ray, rec: &HitRecord) -> Option<(Color, Ray)> {
 		let scatter_dir = Vec3::random_in_hemisphere(&rec.normal);
 		let child_ray = Ray {
 			origin: rec.point,

@@ -1,5 +1,5 @@
 use super::interrupts::{PICS, PIC_1_OFFSET};
-use crate::{cpu::syscalls::Registers, print, process, serial_println};
+use crate::{cpu::syscalls::Registers, process, serial_println};
 use alloc::collections::VecDeque;
 use lazy_static::lazy_static;
 use spin::Mutex;

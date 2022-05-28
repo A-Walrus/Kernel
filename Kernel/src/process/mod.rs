@@ -50,7 +50,7 @@ impl fmt::Display for BackHandle {
 				write!(f, "File, Inode {}", file.inode)?;
 			}
 
-			BackHandle::Dir(dir) => {
+			BackHandle::Dir(_dir) => {
 				write!(f, "Directory")?;
 			}
 		}

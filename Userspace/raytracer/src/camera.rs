@@ -6,6 +6,7 @@ pub struct Camera {
 	vertical: Vec3,
 	u: Vec3,
 	v: Vec3,
+	#[allow(unused)]
 	w: Vec3,
 	lens_radius: f64,
 }
@@ -26,8 +27,6 @@ impl Camera {
 		let h = tan(theta.0 / 2.0);
 		let viewport_height: f64 = 2.0 * h;
 		let viewport_width: f64 = aspect_ratio * viewport_height;
-
-		let focal_length: f64 = 1.0;
 
 		let w = (look_from - look_at).normalized();
 		let u = Vec3::cross(vup, w);

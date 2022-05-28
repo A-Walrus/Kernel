@@ -148,6 +148,29 @@ pub struct BuddyAllocator {
 }
 
 impl BuddyAllocator {
+	/// Calculate the amount of fragmentation
+	pub fn calc_fragmentation(&self) -> f64 {
+		let mut quality = 0;
+		let total_free = self.free_space;
+		for layer in 0..LAYERS {
+			let layer_size = SIZES[layer];
+			quality += layer_size * layer_size * self.count_in_layer(layer);
+		}
+		let quality_percent: f64 = libm::sqrt(quality as f64) / total_free as f64;
+		let fragmentation = 1. - (quality_percent * quality_percent);
+		fragmentation
+	}
+
+	fn count_in_layer(&self, layer: usize) -> usize {
+		let mut count = 0;
+		let mut node = &self.linked_lists[layer];
+		while let Some(next) = node.next {
+			count += 1;
+			node = unsafe { next.as_ref().unwrap() };
+		}
+		count
+	}
+
 	/// Constructor for a [BuddyAllocator]. **Does not add any free blocks to any list**.
 	const fn new() -> Self {
 		let empty = Node { next: None, prev: None };

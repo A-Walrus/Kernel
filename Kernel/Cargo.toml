@@ -26,6 +26,7 @@ bitflags="*"
 modular-bitfield="*"
 hashbrown="*" # no-std hashmap/hashtable
 elf_rs ="*" # parsing ELF executables
+libm = "*"
 
 # config for bootloader
 [package.metadata.bootloader]

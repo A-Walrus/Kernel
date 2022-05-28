@@ -123,11 +123,13 @@ fn sys_info(info_type: u64, arg0: u64, _: u64, _: u64, _: u64, _: u64) -> Syscal
 			// mem
 			let buddy = crate::mem::buddy::ALLOCATOR.lock();
 			let free_space = buddy.get_free_space();
+			let fragmentation = buddy.calc_fragmentation();
 			println!(
-				"Free RAM: {}MiB ({}KiB, {}B)",
+				"Free RAM: {}MiB ({}KiB, {}B)\nFragmentation: {:.1}%",
 				free_space / 0x100000,
 				free_space / 0x400,
-				free_space
+				free_space,
+				fragmentation * 100.
 			);
 		}
 

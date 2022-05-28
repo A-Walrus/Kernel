@@ -47,7 +47,7 @@ fn parse_scan_code(scancode: u8) {
 			match key {
 				DecodedKey::Unicode(character) => {
 					for (_, process) in process::MAP.lock().iter_mut() {
-						if process.terminal == crate::io::buffer::active_term() {
+						if process.terminal == crate::io::buffer::active_term() && process.blocked_on_input() {
 							process.append_input(character)
 						}
 					}
@@ -61,6 +61,7 @@ fn parse_scan_code(scancode: u8) {
 				}
 				DecodedKey::RawKey(KeyCode::ArrowLeft) => crate::io::buffer::cycle_terms(1),
 				DecodedKey::RawKey(KeyCode::ArrowRight) => crate::io::buffer::cycle_terms(-1),
+				DecodedKey::RawKey(KeyCode::F1) => crate::process::remove_current_process(),
 				DecodedKey::RawKey(key) => serial_println!("{:?}", key),
 			}
 		}

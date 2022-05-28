@@ -320,6 +320,17 @@ impl PCB {
 		}
 	}
 
+	/// Check if process is blocked on input
+	pub fn blocked_on_input(&self) -> bool {
+		match &self.block_state {
+			BlockState::Blocked {
+				still: _,
+				data: BlockData::Input { slice: _ },
+			} => true,
+			_ => false,
+		}
+	}
+
 	/// Append a process to waiting processes
 	pub fn append_waiting(&mut self, pid: Pid) {
 		self.waiting_processes.push(pid);

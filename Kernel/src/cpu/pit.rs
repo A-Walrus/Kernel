@@ -16,7 +16,8 @@ const PORT: u16 = 0x61; // Read/Write
 const PIT_BASE_FREQ: u64 = 1193182;
 
 /// Milliseconds per PIT
-pub const TIMER_NANOS: u64 = 10_000_000;
+pub const TIMER_MILIS: u64 = 10;
+const TIMER_NANOS: u64 = TIMER_MILIS * 1_000_000;
 const QUANTA: usize = 5;
 
 /// A Note or a rest
@@ -168,7 +169,7 @@ impl Add for Ticks {
 
 impl Into<Duration> for Ticks {
 	fn into(self) -> Duration {
-		Duration::from_nanos(self.0 / unsafe { TICKS_PER_NANOSEC })
+		Duration::from_nanos(self.0 * 1_000_000 / unsafe { TICKS_PER_MILISEC })
 	}
 }
 
@@ -184,12 +185,12 @@ use core::ops::*;
 
 use core::time::Duration;
 
-static mut TICKS_PER_NANOSEC: u64 = 0;
+static mut TICKS_PER_MILISEC: u64 = 0;
 
 /// wait a duration
 pub fn wait(duration: Duration) {
 	let nanos = duration.as_nanos();
-	let times = nanos / TIMER_NANOS as u128;
+	let times = nanos / TIMER_MILIS as u128;
 	for _ in 0..times {
 		wait_for_pit()
 	}
@@ -204,7 +205,7 @@ pub fn wait_for_pit() {
 }
 
 fn measure_ticks_per_pit() -> u64 {
-	let n = 4;
+	let n = 5;
 	wait_for_pit();
 	let start_ticks = get_ticks().0;
 	for _ in 0..n {
@@ -218,7 +219,8 @@ fn measure_ticks_per_pit() -> u64 {
 pub fn setup_time() {
 	let ticks_per_pit = measure_ticks_per_pit();
 	unsafe {
-		TICKS_PER_NANOSEC = ticks_per_pit / TIMER_NANOS;
+		TICKS_PER_MILISEC = ticks_per_pit / TIMER_MILIS;
+		serial_println!("Ticks per milisec: {}", TICKS_PER_MILISEC);
 	}
 }
 

@@ -18,15 +18,15 @@ pub extern "C" fn main() -> isize {
 		let dest = args[1];
 
 		match File::open(source) {
-			Ok(mut file) => {
+			Ok(mut source_file) => {
 				let mut buf = Vec::new();
-				file.read_to_end(&mut buf).expect("Failed to read!");
+				source_file.read_to_end(&mut buf).expect("Failed to read!");
 
 				match File::create(dest) {
-					Ok(mut file) => {
-						file.write(&buf).expect("Failed to write!");
+					Ok(mut dest_file) => {
+						dest_file.write(&buf).expect("Failed to write!");
+						drop(source_file);
 						unlink(source).expect("Failed to delte source!");
-
 						return 0;
 					}
 					Err(_) => {

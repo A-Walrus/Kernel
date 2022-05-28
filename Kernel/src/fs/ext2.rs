@@ -40,6 +40,16 @@ macro_rules! get_ext {
 	};
 }
 
+/// print super block data
+pub fn print_inode(inode: Inode) {
+	println!("{:?}", get_ext!().lock().get_inode_data(inode));
+}
+
+/// print super block data
+pub fn print_superblock() {
+	println!("{:?}", get_ext!().lock().super_block);
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 /// Literal structure found on disk, the SuperBlock

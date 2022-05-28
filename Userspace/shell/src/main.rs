@@ -26,6 +26,9 @@ pub extern "C" fn main() -> isize {
 			"ps" => {
 				info(0, None);
 			}
+			"superblock" => {
+				info(2, None);
+			}
 			s if s.starts_with("kill ") => match s.split_whitespace().nth(1) {
 				None => println!("Requires extra arguement: pid"),
 				Some(s) => match s.parse() {
@@ -38,6 +41,13 @@ pub extern "C" fn main() -> isize {
 				Some(s) => match s.parse() {
 					Ok(pid) => info(1, Some(pid)),
 					Err(_) => println!("Pid must be a number!"),
+				},
+			},
+			s if s.starts_with("inode ") => match s.split_whitespace().nth(1) {
+				None => println!("Requires extra arguement: Inode"),
+				Some(s) => match s.parse() {
+					Ok(inode) => info(3, Some(inode)),
+					Err(_) => println!("Inode must be a number!"),
 				},
 			},
 			"" => {}

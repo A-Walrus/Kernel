@@ -73,7 +73,7 @@ const SYSCALLS: [Syscall; 17] = [
 fn sys_info(info_type: u64, arg0: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	match info_type {
 		0 => {
-			//procs
+			// procs
 			let map = process::MAP.lock();
 			println!("{}\t{}\t{}", "PID", "TTY", "CMD");
 			for pid in process::QUEUE.lock().iter() {
@@ -82,7 +82,7 @@ fn sys_info(info_type: u64, arg0: u64, _: u64, _: u64, _: u64, _: u64) -> Syscal
 			}
 		}
 		1 => {
-			//pcb
+			// pcb
 			let pid: Pid = arg0 as usize;
 			let map = process::MAP.lock();
 			match map.get(&pid) {
@@ -95,6 +95,16 @@ fn sys_info(info_type: u64, arg0: u64, _: u64, _: u64, _: u64, _: u64) -> Syscal
 				}
 			}
 		}
+		2 => {
+			// superblock
+			crate::fs::ext2::print_superblock();
+		}
+
+		3 => {
+			// inode
+			crate::fs::ext2::print_inode(arg0 as u32);
+		}
+
 		_ => return Result(-1),
 	}
 	return Result(0);

@@ -1094,6 +1094,8 @@ impl Write for File {
 
 				let old0 = old_block_count;
 				let new0 = self.blocks.len();
+
+				// serial_println!("BPB {}", blocks_per_block);
 				// serial_println!("0: {}	->	{}", old0, new0);
 
 				let old1 = next_tier_blocks(old0, 0, blocks_per_block);
@@ -1192,19 +1194,23 @@ fn fill_block_pointers(
 		}
 	}
 
+	// get new blocks if more are necessary
 	for _ in 0..new - old {
 		let free_block = get_ext!().lock().get_free_block().map_err(|_| IOError::Other)?;
+		let sub_blocks = get_sub_blocks(&mut reader, free_block)?;
+		sub_blocks.fill(0);
 		vec.push(free_block);
 	}
 
-	let mut slice: &[Block] = &vec;
+	let mut remaining: &[Block] = &vec;
+
 	if old < in_inode.len() {
-		let len = min(in_inode.len() - old, slice.len());
-		in_inode[old..old + len].copy_from_slice(&slice[..len]);
-		slice = &slice[len..]
+		let len = min(in_inode.len() - old, remaining.len());
+		in_inode[old..old + len].copy_from_slice(&remaining[..len]);
+		remaining = &remaining[len..]
 	}
 
-	while !slice.is_empty() {
+	while !parents.is_empty() {
 		let sub_blocks = get_sub_blocks(&mut reader, parents[0])?;
 		parents = &parents[1..];
 		let first_zero = sub_blocks
@@ -1216,9 +1222,9 @@ fn fill_block_pointers(
 		}
 
 		let sub_slice = &mut sub_blocks[first_zero..];
-		let len = min(slice.len(), sub_slice.len());
-		sub_slice[..len].copy_from_slice(&slice[..len]);
-		slice = &slice[len..];
+		let len = min(remaining.len(), sub_slice.len());
+		sub_slice[..len].copy_from_slice(&remaining[..len]);
+		remaining = &remaining[len..];
 	}
 
 	// If old == 0 vec is only new blocks, if it isn't than vec is the last block + the new blocks
@@ -1227,7 +1233,7 @@ fn fill_block_pointers(
 
 	match first {
 		None => {
-			assert_eq!(old, 0);
+			assert_eq!(old, 0, "new: {}, old: {}", new, old);
 		}
 		Some(block) => {
 			vec.insert(0, block);
@@ -1372,7 +1378,7 @@ pub fn test() -> Result<(), Ext2Err> {
 	let mut writer = File::new(inode)?;
 	writer.write(b"Hello world!\n")?;
 	writer.write(b"My name is Guy\n")?;
-	for _ in 0..10 {
+	for _ in 0..100 {
 		writer.write(TEST_DATA)?;
 	}
 

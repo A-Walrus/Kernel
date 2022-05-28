@@ -225,7 +225,7 @@ impl Default for Style {
 /// buffer with the [Screen::flush] method.
 pub struct Screen<'a> {
 	/// The front buffer, visible buffer.
-	front: Buffer<'a>,
+	pub front: Buffer<'a>,
 	/// The back buffer, that is directly written to.
 	pub back: Vec<Pixel>,
 	/// Some information about the screen: (resolution...).
@@ -267,7 +267,7 @@ impl<'a> Screen<'a> {
 	/// Convert 2D [PixelPos] into 1D index into [Buffer]. This is calculated using
 	/// [FrameBufferInfo::stride] and not the x resolution, since there could be padding outside of
 	/// the screen.
-	fn pos_to_index(&self, pos: &PixelPos) -> usize {
+	pub fn pos_to_index(&self, pos: &PixelPos) -> usize {
 		pos.x + pos.y * self.info.stride
 	}
 }

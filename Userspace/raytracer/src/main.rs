@@ -49,25 +49,23 @@ fn ray_color(ray: &Ray, world: &Box<dyn Hittable>, depth: usize) -> Color {
 
 #[no_mangle]
 pub extern "C" fn main() -> isize {
-	println!("starting");
+	let draw = get_args().contains(&"--draw");
+
+	println!("Starting");
 
 	let mut file = File::create("/image.ppm").expect("Failed to create file");
 
-	println!("file created");
+	println!("File created");
 	// Image
 	const ASPECT_RATIO: f64 = 3.0 / 2.0;
-	const IMAGE_WIDTH: usize = 100;
+	const IMAGE_WIDTH: usize = 120;
 	const IMAGE_HEIGHT: usize = (IMAGE_WIDTH as f64 / ASPECT_RATIO) as usize;
 	const SAMPLES_PER_PIXEL: usize = 5;
 	const MAX_DEPTH: usize = 50;
 
-	println!("consts");
-
 	// World
 
 	let world = HittableList::random();
-
-	println!("world");
 
 	// Camera
 
@@ -92,7 +90,9 @@ pub extern "C" fn main() -> isize {
 	file.write("255\n".as_bytes());
 
 	for j in (0..IMAGE_HEIGHT).rev() {
-		println!("Scanlines remaining: {}", j);
+		if !draw {
+			println!("Scanlines remaining: {}", j);
+		}
 		for i in 0..IMAGE_WIDTH {
 			let mut pixel_color = Color::new(0.0, 0.0, 0.0);
 			for _ in 0..SAMPLES_PER_PIXEL {
@@ -101,7 +101,7 @@ pub extern "C" fn main() -> isize {
 				let ray = cam.get_ray(u, v);
 				pixel_color += ray_color(&ray, &world, MAX_DEPTH);
 			}
-			pixel_color.write(SAMPLES_PER_PIXEL, &mut file);
+			pixel_color.write(SAMPLES_PER_PIXEL, &mut file, IMAGE_HEIGHT - j, i, draw);
 		}
 	}
 	println!("Done");

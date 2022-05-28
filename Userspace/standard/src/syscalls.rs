@@ -73,6 +73,12 @@ pub fn open_file(path: &str, flags: OpenFlags) -> Result<Handle, ()> {
 	}
 }
 
+pub fn sys_paint(x: usize, y: usize, r: u8, g: u8, b: u8) {
+	unsafe {
+		syscall5(17, x, y, r as usize, g as usize, b as usize);
+	}
+}
+
 pub fn open_dir(path: &str) -> Result<Handle, ()> {
 	let handle = unsafe { syscall2(9, path.as_ptr() as usize, path.len()) };
 	if handle >= 0 {

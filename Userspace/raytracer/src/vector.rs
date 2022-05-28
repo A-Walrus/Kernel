@@ -6,7 +6,7 @@ use crate::utility::{clamp, random_double, random_in_range};
 
 use alloc::format;
 
-use standard::io::*;
+use standard::{io::*, syscalls};
 
 use libm::sqrt;
 
@@ -177,7 +177,7 @@ pub type Point3 = Vec3;
 pub type Color = Vec3;
 
 impl Color {
-	pub fn write(&self, samples_per_pixel: usize, file: &mut File) {
+	pub fn write(&self, samples_per_pixel: usize, file: &mut File, y: usize, x: usize, draw: bool) {
 		let mut r = self.x();
 		let mut g = self.y();
 		let mut b = self.z();
@@ -192,5 +192,8 @@ impl Color {
 
 		file.write(format!("{} {} {}\n", ir, ig, ib).as_bytes())
 			.expect("Failed to write to file");
+		if draw {
+			syscalls::sys_paint(x, y, ir, ig, ib);
+		}
 	}
 }

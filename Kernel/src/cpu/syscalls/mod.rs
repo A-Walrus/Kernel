@@ -47,7 +47,7 @@ pub enum SyscallResult {
 /// A system call function
 pub type Syscall = fn(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> SyscallResult;
 
-const SYSCALLS: [Syscall; 17] = [
+const SYSCALLS: [Syscall; 18] = [
 	sys_debug,
 	sys_print,
 	sys_exit,
@@ -65,10 +65,24 @@ const SYSCALLS: [Syscall; 17] = [
 	sys_kill,
 	sys_mkdir,
 	sys_info,
+	sys_paint,
 ];
 
 // 0 - procs
 // 1 - pcb
+
+fn sys_paint(x: u64, y: u64, r: u64, g: u64, b: u64, _: u64) -> SyscallResult {
+	unsafe {
+		use crate::io::buffer::{Pixel, PixelPos, SCREEN};
+		let screen = SCREEN.as_mut().unwrap();
+		let pixel = Pixel::new(r as u8, g as u8, b as u8);
+		let pos = PixelPos::new(x as usize, y as usize);
+		screen.put_pixel(pixel, &pos);
+		let index = screen.pos_to_index(&pos);
+		screen.front[index] = pixel;
+	}
+	return Result(0);
+}
 
 fn sys_info(info_type: u64, arg0: u64, _: u64, _: u64, _: u64, _: u64) -> SyscallResult {
 	match info_type {

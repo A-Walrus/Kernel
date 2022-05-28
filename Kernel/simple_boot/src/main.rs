@@ -31,7 +31,7 @@ const RUN_ARGS: &[&str] = &[
 	// "-device",
 	// "hda-duplex",
 	"-m",
-	"128M",
+	"512M",
 ];
 
 fn main() {

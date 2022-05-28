@@ -1,9 +1,10 @@
 use lazy_static::lazy_static;
-use rand::{prelude::SmallRng, Rng, SeedableRng};
+use nanorand::{Rng, WyRand};
 use spin::Mutex;
+use standard::println;
 
 lazy_static! {
-	static ref RNG: Mutex<SmallRng> = Mutex::new(SmallRng::seed_from_u64(0));
+	static ref RNG: Mutex<WyRand> = Mutex::new(WyRand::new_seed(0x5502cf95915b7ef9));
 }
 pub const INFINITY: f64 = f64::INFINITY;
 pub const PI: f64 = core::f64::consts::PI;
@@ -19,7 +20,7 @@ pub fn clamp(x: f64, min: f64, max: f64) -> f64 {
 }
 
 pub fn random_double() -> f64 {
-	0.5
+	RNG.lock().generate()
 }
 
 pub fn random_in_range(min: f64, max: f64) -> f64 {

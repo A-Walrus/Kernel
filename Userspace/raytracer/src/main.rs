@@ -11,7 +11,6 @@ mod vector;
 use camera::Camera;
 use hittable::{HitRecord, Hittable, HittableList};
 use material::*;
-use rand::{self, prelude::*};
 use ray::*;
 use utility::*;
 use vector::*;
@@ -57,9 +56,9 @@ pub extern "C" fn main() -> isize {
 	println!("file created");
 	// Image
 	const ASPECT_RATIO: f64 = 3.0 / 2.0;
-	const IMAGE_WIDTH: usize = 80;
+	const IMAGE_WIDTH: usize = 100;
 	const IMAGE_HEIGHT: usize = (IMAGE_WIDTH as f64 / ASPECT_RATIO) as usize;
-	const SAMPLES_PER_PIXEL: usize = 1;
+	const SAMPLES_PER_PIXEL: usize = 5;
 	const MAX_DEPTH: usize = 50;
 
 	println!("consts");
@@ -88,13 +87,9 @@ pub extern "C" fn main() -> isize {
 	);
 	// Render
 
-	println!("begining render");
-
 	file.write("P3\n".as_bytes());
 	file.write(format!("{} {}\n", IMAGE_WIDTH, IMAGE_HEIGHT).as_bytes());
 	file.write("255\n".as_bytes());
-
-	println!("YO");
 
 	for j in (0..IMAGE_HEIGHT).rev() {
 		println!("Scanlines remaining: {}", j);

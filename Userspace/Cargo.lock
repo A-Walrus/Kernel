@@ -141,6 +141,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanorand"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a51313c5820b0b02bd422f4b44776fbf47961755c74ce64afc73bfad10226c3"
+
+[[package]]
 name = "null_ptr"
 version = "0.1.0"
 dependencies = [
@@ -173,27 +179,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "rand"
-version = "0.8.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
-dependencies = [
- "rand_core",
-]
-
-[[package]]
-name = "rand_core"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d34f1408f55294453790c48b2f1ebbb1c5b4b7563eb1f418bcfcfdbb06ebb4e7"
-
-[[package]]
 name = "raytracer"
 version = "0.1.0"
 dependencies = [
  "lazy_static",
  "libm",
- "rand",
+ "nanorand",
  "spin",
  "standard",
 ]

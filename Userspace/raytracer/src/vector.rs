@@ -190,7 +190,7 @@ impl Color {
 		let ig = (256.0 * clamp(g, 0.0, 0.999)) as u8;
 		let ib = (256.0 * clamp(b, 0.0, 0.999)) as u8;
 
-		file.write(format!("{} {} {}", ir, ig, ib).as_bytes())
+		file.write(format!("{} {} {}\n", ir, ig, ib).as_bytes())
 			.expect("Failed to write to file");
 	}
 }

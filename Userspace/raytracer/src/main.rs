@@ -50,20 +50,25 @@ fn ray_color(ray: &Ray, world: &Box<dyn Hittable>, depth: usize) -> Color {
 
 #[no_mangle]
 pub extern "C" fn main() -> isize {
-	println!("staring");
+	println!("starting");
 
 	let mut file = File::create("/image.ppm").expect("Failed to create file");
 
+	println!("file created");
 	// Image
 	const ASPECT_RATIO: f64 = 3.0 / 2.0;
 	const IMAGE_WIDTH: usize = 80;
 	const IMAGE_HEIGHT: usize = (IMAGE_WIDTH as f64 / ASPECT_RATIO) as usize;
-	const SAMPLES_PER_PIXEL: usize = 100;
+	const SAMPLES_PER_PIXEL: usize = 1;
 	const MAX_DEPTH: usize = 50;
+
+	println!("consts");
 
 	// World
 
 	let world = HittableList::random();
+
+	println!("world");
 
 	// Camera
 
@@ -85,9 +90,11 @@ pub extern "C" fn main() -> isize {
 
 	println!("begining render");
 
-	file.write("P3".as_bytes());
-	file.write(format!("{} {}", IMAGE_WIDTH, IMAGE_HEIGHT).as_bytes());
-	file.write("255".as_bytes());
+	file.write("P3\n".as_bytes());
+	file.write(format!("{} {}\n", IMAGE_WIDTH, IMAGE_HEIGHT).as_bytes());
+	file.write("255\n".as_bytes());
+
+	println!("YO");
 
 	for j in (0..IMAGE_HEIGHT).rev() {
 		println!("Scanlines remaining: {}", j);

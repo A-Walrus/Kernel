@@ -565,7 +565,6 @@ struct ExtBitMap {
 
 impl ExtBitMap {
 	fn set(&mut self, place: usize, value: Bit) {
-		// serial_println!("setting {} to {:?}", place, value);
 		let index = place / 8;
 		let offset = place % 8;
 		self.bytes[index] = match value {
@@ -943,7 +942,7 @@ fn get_indirect_blocks(
 		}
 		if indirectness > 1 {
 			if with_parents {
-				blocks.extend_from_slice(sub_blocks);
+				blocks.push(block);
 			}
 			for block in sub_blocks {
 				get_indirect_blocks(blocks, b_reader, *block, indirectness - 1, with_parents)?;
@@ -1217,7 +1216,7 @@ fn fill_block_pointers(
 			.iter()
 			.position(|a| *a == 0)
 			.expect("No free blocks in parent");
-		if first.is_none() {
+		if first.is_none() && first_zero > 0 {
 			first = Some(sub_blocks[first_zero - 1]);
 		}
 
